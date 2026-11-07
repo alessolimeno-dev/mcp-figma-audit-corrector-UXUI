@@ -1,0 +1,1441 @@
+{
+  "$schema": "https://www.w3.org/WAI/WCAG22/wcag.json",
+  "version": "2.2",
+  "source": "W3C Web Content Accessibility Guidelines (WCAG) 2.2 — https://www.w3.org/TR/WCAG22/ & Traduzione Ufficiale W3C-IT https://www.w3.org/Translations/WCAG22-it/",
+  "color_libraries": {
+    "wcag-contrast-ratio": "https://pypi.org/project/wcag-contrast-ratio/",
+    "colorbrew": "https://pypi.org/project/colorbrew/"
+  },
+  "usability_heuristics_source": {
+    "author": "Jakob Nielsen",
+    "academic_citation_1994a": "Nielsen, J. (1994a). Enhancing the explanatory power of usability heuristics. Proceedings of the SIGCHI Conference on Human Factors in Computing Systems (CHI '94), pp. 152-158. ACM. https://doi.org/10.1145/191666.191729",
+    "academic_citation_1994b": "Nielsen, J. (1994b). Usability Engineering. Morgan Kaufmann Publishers, San Francisco, CA. ISBN 978-0125184069",
+    "official_nng_url": "https://www.nngroup.com/articles/ten-usability-heuristics/",
+    "heuristics": {
+      "UX-en-1": {
+        "id": "UX-en-1",
+        "num": 1,
+        "name_en": "Visibility of system status",
+        "nome": "Visibilità dello stato del sistema",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "Se l'elemento ha stati dinamici (es. pagina attiva nel menu o tab selezionata), annotare: aria-current=\"page\" o aria-selected=\"true\"."
+      },
+      "UX-en-2": {
+        "id": "UX-en-2",
+        "num": 2,
+        "name_en": "Match between system and the real world",
+        "nome": "Corrispondenza tra sistema e mondo reale",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "-"
+      },
+      "UX-en-3": {
+        "id": "UX-en-3",
+        "num": 3,
+        "name_en": "User control and freedom",
+        "nome": "Controllo e libertà dell'utente",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "Su pulsanti di chiusura modale/drawer solo-icona (X), annotare: <button type=\"button\" aria-label=\"[azione chiusura]\"> e gestione tasto Esc."
+      },
+      "UX-en-4": {
+        "id": "UX-en-4",
+        "num": 4,
+        "name_en": "Consistency and standards",
+        "nome": "Coerenza e standard",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "-"
+      },
+      "UX-en-5": {
+        "id": "UX-en-5",
+        "num": 5,
+        "name_en": "Error prevention",
+        "nome": "Prevenzione degli errori",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "Sui campi obbligatori, annotare per lo sviluppo: attributo required / aria-required=\"true\" e aria-describedby=\"[id-hint]\"."
+      },
+      "UX-en-6": {
+        "id": "UX-en-6",
+        "num": 6,
+        "name_en": "Recognition rather than recall",
+        "nome": "Riconoscimento anziché ricordo",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "Annotare associazione esplicita <label for=\"[id-input]\"> sempre visibile fuori dal placeholder."
+      },
+      "UX-en-7": {
+        "id": "UX-en-7",
+        "num": 7,
+        "name_en": "Flexibility and efficiency of use",
+        "nome": "Flessibilità ed efficienza d'uso",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "-"
+      },
+      "UX-en-8": {
+        "id": "UX-en-8",
+        "num": 8,
+        "name_en": "Aesthetic and minimalist design",
+        "nome": "Design estetico e minimalista",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "-"
+      },
+      "UX-en-9": {
+        "id": "UX-en-9",
+        "num": 9,
+        "name_en": "Help users recognize, diagnose, and recover from errors",
+        "nome": "Aiuto a riconoscere, diagnosticare e correggere gli errori",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "Sullo stato di errore del campo, annotare: aria-invalid=\"true\" e aria-errormessage=\"[id-msg-errore]\" (o role=\"alert\")."
+      },
+      "UX-en-10": {
+        "id": "UX-en-10",
+        "num": 10,
+        "name_en": "Help and documentation",
+        "nome": "Aiuto e documentazione",
+        "ambito": "Usabilità",
+        "stato": "Verificata",
+        "dove": "Prototipo Figma",
+        "annotazione_figma": "-"
+      }
+    }
+  },
+  "criteria": {
+    "1.1.1": {
+      "num": "1.1.1",
+      "handle": "Non-text Content",
+      "nome": "Contenuti non testuali",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#non-text-content",
+      "techniques": [
+        "H37",
+        "H67",
+        "ARIA6",
+        "ARIA10",
+        "G94",
+        "G95"
+      ],
+      "stato": "Verificata",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione in Figma (Tecnica W3C H37/H67): per immagine informativa <img alt=\"[descrizione funzione/contenuto]\">; per immagine/icona decorativa alt=\"\" o aria-hidden=\"true\"."
+    },
+    "1.2.1": {
+      "num": "1.2.1",
+      "handle": "Audio-only and Video-only (Prerecorded)",
+      "nome": "Solo audio e solo video (preregistrati)",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#audio-only-and-video-only-prerecorded",
+      "techniques": [
+        "G158",
+        "G159",
+        "G166"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione in Figma (Tecnica W3C G158/G159): prevedere link a trascrizione testuale o traccia audio descrittiva."
+    },
+    "1.2.2": {
+      "num": "1.2.2",
+      "handle": "Captions (Prerecorded)",
+      "nome": "Sottotitoli (preregistrati)",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#captions-prerecorded",
+      "techniques": [
+        "G87",
+        "G93",
+        "H95"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione in Figma (Tecnica W3C H95): <video> con elemento <track kind=\"captions\" srclang=\"it\" label=\"Italiano\">."
+    },
+    "1.2.3": {
+      "num": "1.2.3",
+      "handle": "Audio Description or Media Alternative (Prerecorded)",
+      "nome": "Audiodescrizione o tipo di media alternativo (preregistrato)",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#audio-description-or-media-alternative-prerecorded",
+      "techniques": [
+        "G69",
+        "G78",
+        "H96"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "Annotare su player video (Tecnica W3C H96): <track kind=\"descriptions\"> o link a trascrizione completa."
+    },
+    "1.2.4": {
+      "num": "1.2.4",
+      "handle": "Captions (Live)",
+      "nome": "Sottotitoli (in tempo reale)",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#captions-live",
+      "techniques": [
+        "G9",
+        "G93"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "1.2.5": {
+      "num": "1.2.5",
+      "handle": "Audio Description (Prerecorded)",
+      "nome": "Audiodescrizione (preregistrata)",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#audio-description-prerecorded",
+      "techniques": [
+        "G78",
+        "G173",
+        "H96"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "Annotare su player video (Tecnica W3C H96): supporto traccia <track kind=\"descriptions\">."
+    },
+    "1.2.6": {
+      "num": "1.2.6",
+      "handle": "Sign Language (Prerecorded)",
+      "nome": "Lingua dei segni (preregistrata)",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#sign-language-prerecorded",
+      "techniques": [
+        "G54",
+        "G81"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "1.2.7": {
+      "num": "1.2.7",
+      "handle": "Extended Audio Description (Prerecorded)",
+      "nome": "Audiodescrizione estesa (preregistrata)",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#extended-audio-description-prerecorded",
+      "techniques": [
+        "G8"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "1.2.8": {
+      "num": "1.2.8",
+      "handle": "Media Alternative (Prerecorded)",
+      "nome": "Tipo di media alternativo (preregistrato)",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#media-alternative-prerecorded",
+      "techniques": [
+        "G69",
+        "G159"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "-"
+    },
+    "1.2.9": {
+      "num": "1.2.9",
+      "handle": "Audio-only (Live)",
+      "nome": "Solo audio (in tempo reale)",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#audio-only-live",
+      "techniques": [
+        "G150",
+        "G151",
+        "G157"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "1.3.1": {
+      "num": "1.3.1",
+      "handle": "Info and Relationships",
+      "nome": "Informazioni e correlazioni",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#info-and-relationships",
+      "techniques": [
+        "H42",
+        "H44",
+        "H48",
+        "H51",
+        "H71",
+        "ARIA11",
+        "ARIA12"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione in Figma (Tecnica W3C H42/ARIA11/H44): specificare gerarchia tag semantici <h1>-<h6> (senza salti di livello), landmark (<header>, <nav>, <main>, <footer>) o <label for=\"[id]\">."
+    },
+    "1.3.2": {
+      "num": "1.3.2",
+      "handle": "Meaningful Sequence",
+      "nome": "Sequenza significativa",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#meaningful-sequence",
+      "techniques": [
+        "G57",
+        "C27",
+        "H34"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione in Figma (Tecnica W3C C27): l'ordine dei nodi nel DOM deve coincidere con l'ordine di lettura visivo."
+    },
+    "1.3.3": {
+      "num": "1.3.3",
+      "handle": "Sensory Characteristics",
+      "nome": "Caratteristiche sensoriali",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#sensory-characteristics",
+      "techniques": [
+        "G96"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "1.3.4": {
+      "num": "1.3.4",
+      "handle": "Orientation",
+      "nome": "Orientamento",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#orientation",
+      "techniques": [
+        "G214"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "-"
+    },
+    "1.3.5": {
+      "num": "1.3.5",
+      "handle": "Identify Input Purpose",
+      "nome": "Identificare lo scopo degli input",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#identify-input-purpose",
+      "techniques": [
+        "H98"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione in Figma sui campi dati personali (Tecnica W3C H98): aggiungere attributo HTML autocomplete=\"[name|email|tel|street-address|postal-code]\"."
+    },
+    "1.3.6": {
+      "num": "1.3.6",
+      "handle": "Identify Purpose",
+      "nome": "Identificare lo scopo",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#identify-purpose",
+      "techniques": [
+        "ARIA11"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Annotare i landmark ARIA/HTML5 (<header>, <nav>, <main>, <aside>, <footer>) per tutte le regioni della pagina."
+    },
+    "1.4.1": {
+      "num": "1.4.1",
+      "handle": "Use of Color",
+      "nome": "Uso del colore",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#use-of-color",
+      "techniques": [
+        "G14",
+        "G182",
+        "G183"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "1.4.2": {
+      "num": "1.4.2",
+      "handle": "Audio Control",
+      "nome": "Controllo del sonoro",
+      "level": "A",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#audio-control",
+      "techniques": [
+        "G60",
+        "G170",
+        "G171"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Annotare su elementi multimediali: divieto di autoplay sonoro > 3s o presenza comando muto/pausa raggiungibile da tastiera."
+    },
+    "1.4.3": {
+      "num": "1.4.3",
+      "handle": "Contrast (Minimum)",
+      "nome": "Contrasto (minimo)",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#contrast-minimum",
+      "techniques": [
+        "G18",
+        "G145",
+        "G148",
+        "G174"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "1.4.4": {
+      "num": "1.4.4",
+      "handle": "Resize Text",
+      "nome": "Ridimensionamento del testo",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#resize-text",
+      "techniques": [
+        "G142",
+        "C12",
+        "C13",
+        "C14",
+        "C28"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Annotare per lo sviluppo (Tecnica W3C C14/C28): usare unità relative (rem/em) per font-size e contenitori con min-height anziché height fissa (overflow visibile a zoom 200%)."
+    },
+    "1.4.5": {
+      "num": "1.4.5",
+      "handle": "Images of Text",
+      "nome": "Immagini di testo",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#images-of-text",
+      "techniques": [
+        "C22",
+        "C30",
+        "G140"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "1.4.6": {
+      "num": "1.4.6",
+      "handle": "Contrast (Enhanced)",
+      "nome": "Contrasto (migliorato)",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#contrast-enhanced",
+      "techniques": [
+        "G17",
+        "G18"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "1.4.7": {
+      "num": "1.4.7",
+      "handle": "Low or No Background Audio",
+      "nome": "Audio di sottofondo basso o assente",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#low-or-no-background-audio",
+      "techniques": [
+        "G56"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "1.4.8": {
+      "num": "1.4.8",
+      "handle": "Visual Presentation",
+      "nome": "Presentazione visiva",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#visual-presentation",
+      "techniques": [
+        "C20",
+        "C21",
+        "G146",
+        "G188"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Evitare testo giustificato (text-align: justify) e mantenere larghezza colonna <= 80 caratteri (max-width: 70ch)."
+    },
+    "1.4.9": {
+      "num": "1.4.9",
+      "handle": "Images of Text (No Exception)",
+      "nome": "Immagini di testo (senza eccezioni)",
+      "level": "AAA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#images-of-text-no-exception",
+      "techniques": [
+        "C22",
+        "C30",
+        "G140"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "1.4.10": {
+      "num": "1.4.10",
+      "handle": "Reflow",
+      "nome": "Ridisposizione (Reflow)",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#reflow",
+      "techniques": [
+        "C31",
+        "C32",
+        "C33",
+        "C38"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Annotare per lo sviluppo (Tecnica W3C C31/C32): layout Flexbox/CSS Grid fluido fino a 320px CSS senza scroll orizzontale bidimensionale."
+    },
+    "1.4.11": {
+      "num": "1.4.11",
+      "handle": "Non-text Contrast",
+      "nome": "Contrasto in contenuti non testuali",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#non-text-contrast",
+      "techniques": [
+        "G195",
+        "G207",
+        "G209"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "1.4.12": {
+      "num": "1.4.12",
+      "handle": "Text Spacing",
+      "nome": "Spaziatura del testo",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#text-spacing",
+      "techniques": [
+        "C35",
+        "C36"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Annotare per lo sviluppo (Tecnica W3C C36): non bloccare line-height (>=1.5), letter-spacing (>=0.12em) e word-spacing (>=0.16em) con altezze fisse o overflow:hidden."
+    },
+    "1.4.13": {
+      "num": "1.4.13",
+      "handle": "Content on Hover or Focus",
+      "nome": "Contenuto con Hover o Focus",
+      "level": "AA",
+      "principle": "1. Percepibile",
+      "url": "https://www.w3.org/TR/WCAG22/#content-on-hover-or-focus",
+      "techniques": [
+        "ARIA3",
+        "SCR39"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Su tooltip/popover annotare (Tecnica W3C SCR39): il contenuto deve essere chiudibile con tasto Esc (dismissible), survolabile col cursore (hoverable) e persistente."
+    },
+    "2.1.1": {
+      "num": "2.1.1",
+      "handle": "Keyboard",
+      "nome": "Tastiera",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#keyboard",
+      "techniques": [
+        "G202",
+        "H91",
+        "SCR20",
+        "SCR35"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "Annotare per elementi interattivi (Tecnica W3C H91): utilizzare tag nativi focalizzabili (<button>, <a href=\"...\">, <input>) evitando <div onclick> privi di tabindex=\"0\" e keydown handler."
+    },
+    "2.1.2": {
+      "num": "2.1.2",
+      "handle": "No Keyboard Trap",
+      "nome": "Nessun impedimento all'uso della tastiera",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#no-keyboard-trap",
+      "techniques": [
+        "G21"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "Annotare su modali/dialog: focus trap confinato finché aperta (role=\"dialog\" aria-modal=\"true\") con uscita garantita tramite tasto Esc e pulsante Chiudi."
+    },
+    "2.1.3": {
+      "num": "2.1.3",
+      "handle": "Keyboard (No Exception)",
+      "nome": "Tastiera (senza eccezioni)",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#keyboard-no-exception",
+      "techniques": [
+        "G202",
+        "H91"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.1.4": {
+      "num": "2.1.4",
+      "handle": "Character Key Shortcuts",
+      "nome": "Scorciatoie da tastiera con tasti di carattere",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#character-key-shortcuts",
+      "techniques": [
+        "G217"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.2.1": {
+      "num": "2.2.1",
+      "handle": "Timing Adjustable",
+      "nome": "Regolazione tempi di esecuzione",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#timing-adjustable",
+      "techniques": [
+        "G133",
+        "G198",
+        "SCR16"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "-"
+    },
+    "2.2.2": {
+      "num": "2.2.2",
+      "handle": "Pause, Stop, Hide",
+      "nome": "Pausa, stop, nascondi",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#pause-stop-hide",
+      "techniques": [
+        "G4",
+        "SCR33"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Su caroselli/slider in movimento automatico (Tecnica W3C G4): annotare pulsante Pausa/Play con <button aria-label=\"[Pausa/Avvia carosello]\"> e arresto automatico al focus."
+    },
+    "2.2.3": {
+      "num": "2.2.3",
+      "handle": "No Timing",
+      "nome": "Nessuna tempificazione",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#no-timing",
+      "techniques": [
+        "G5"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.2.4": {
+      "num": "2.2.4",
+      "handle": "Interruptions",
+      "nome": "Interruzioni",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#interruptions",
+      "techniques": [
+        "G75",
+        "G76"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.2.5": {
+      "num": "2.2.5",
+      "handle": "Re-authenticating",
+      "nome": "Nuova autenticazione",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#re-authenticating",
+      "techniques": [
+        "G105",
+        "G181"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.2.6": {
+      "num": "2.2.6",
+      "handle": "Timeouts",
+      "nome": "Timeout",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#timeouts",
+      "techniques": [
+        "G213"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "-"
+    },
+    "2.3.1": {
+      "num": "2.3.1",
+      "handle": "Three Flashes or Below Threshold",
+      "nome": "Tre lampeggiamenti o inferiore alla soglia",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#three-flashes-or-below-threshold",
+      "techniques": [
+        "G19",
+        "G176"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.3.2": {
+      "num": "2.3.2",
+      "handle": "Three Flashes",
+      "nome": "Tre lampeggiamenti",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#three-flashes",
+      "techniques": [
+        "G19"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.3.3": {
+      "num": "2.3.3",
+      "handle": "Animation from Interactions",
+      "nome": "Animazione da interazioni",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#animation-from-interactions",
+      "techniques": [
+        "C39"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Annotare per le animazioni UI (Tecnica W3C C39): rispettare la media query CSS @media (prefers-reduced-motion: reduce)."
+    },
+    "2.4.1": {
+      "num": "2.4.1",
+      "handle": "Bypass Blocks",
+      "nome": "Salto di blocchi",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#bypass-blocks",
+      "techniques": [
+        "G1",
+        "H69",
+        "ARIA11"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione ad inizio pagina (Tecnica W3C G1): prevedere link \"Salta al contenuto principale\" (<a class=\"skip-link\" href=\"#main-content\">) visibile al :focus."
+    },
+    "2.4.2": {
+      "num": "2.4.2",
+      "handle": "Page Titled",
+      "nome": "Titolo della pagina",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#page-titled",
+      "techniques": [
+        "G88",
+        "H25"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione a livello di Frame pagina (Tecnica W3C H25): specificare <title>[Nome Pagina - Nome Sito]</title>."
+    },
+    "2.4.3": {
+      "num": "2.4.3",
+      "handle": "Focus Order",
+      "nome": "Ordine del focus",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#focus-order",
+      "techniques": [
+        "G59",
+        "H4",
+        "C27",
+        "SCR26"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione ordine di tabulazione in Figma (Tecnica W3C G59/C27): numerare la sequenza di focus (#1, #2, ...) evitando valori positivi di tabindex."
+    },
+    "2.4.4": {
+      "num": "2.4.4",
+      "handle": "Link Purpose (In Context)",
+      "nome": "Scopo del collegamento (nel contesto)",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#link-purpose-in-context",
+      "techniques": [
+        "G91",
+        "H30",
+        "ARIA7",
+        "ARIA8"
+      ],
+      "stato": "Verificata",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Su link generici (\"Scopri di più\", \"Leggi\") o solo-icona, inserire annotazione (Tecnica W3C ARIA8/H30): <a href=\"...\" aria-label=\"[azione + contesto specifico]\"> oppure sostituire il copy visibile."
+    },
+    "2.4.5": {
+      "num": "2.4.5",
+      "handle": "Multiple Ways",
+      "nome": "Differenti modalità",
+      "level": "AA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#multiple-ways",
+      "techniques": [
+        "G125",
+        "G126",
+        "G161"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "2.4.6": {
+      "num": "2.4.6",
+      "handle": "Headings and Labels",
+      "nome": "Intestazioni ed etichette",
+      "level": "AA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#headings-and-labels",
+      "techniques": [
+        "G130",
+        "G131",
+        "ARIA14"
+      ],
+      "stato": "Verificata",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Per pulsanti/controlli solo-icona privi di label testuale visibile, inserire annotazione in Figma (Tecnica W3C ARIA14): <button type=\"button\" aria-label=\"[azione del pulsante]\"> con <svg aria-hidden=\"true\">."
+    },
+    "2.4.7": {
+      "num": "2.4.7",
+      "handle": "Focus Visible",
+      "nome": "Focus visibile",
+      "level": "AA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#focus-visible",
+      "techniques": [
+        "G149",
+        "G165",
+        "G195",
+        "C15",
+        "C40"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Annotare nel Design System (Tecnica W3C G195/C40): definire stile CSS :focus-visible { outline: 2px solid [colore >=3:1]; outline-offset: 2px; } senza mai impostare outline: none."
+    },
+    "2.4.8": {
+      "num": "2.4.8",
+      "handle": "Location",
+      "nome": "Posizione",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#location",
+      "techniques": [
+        "G63",
+        "G65",
+        "ARIA11"
+      ],
+      "stato": "Verificata",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Su breadcrumb annotare: <nav aria-label=\"Breadcrumb\"> con <a aria-current=\"page\"> sulla voce corrente."
+    },
+    "2.4.9": {
+      "num": "2.4.9",
+      "handle": "Link Purpose (Link Only)",
+      "nome": "Scopo del collegamento (solo collegamento)",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#link-purpose-link-only",
+      "techniques": [
+        "H30",
+        "ARIA8"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "2.4.10": {
+      "num": "2.4.10",
+      "handle": "Section Headings",
+      "nome": "Intestazioni di sezione",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#section-headings",
+      "techniques": [
+        "G141",
+        "H69"
+      ],
+      "stato": "Verificata",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Annotare il tag semantico di intestazione (<h2>-<h6>) per ciascuna sezione tematica."
+    },
+    "2.4.11": {
+      "num": "2.4.11",
+      "handle": "Focus Not Obscured (Minimum)",
+      "nome": "Focus non oscurato (minimo)",
+      "level": "AA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#focus-not-obscured-minimum",
+      "techniques": [
+        "C43"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "Annotare su header/footer sticky o banner fissi (Tecnica W3C C43): impostare scroll-padding-top / scroll-padding-bottom sul contenitore di scroll pari all'altezza dell'elemento fisso."
+    },
+    "2.4.12": {
+      "num": "2.4.12",
+      "handle": "Focus Not Obscured (Enhanced)",
+      "nome": "Focus non oscurato (migliorato)",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#focus-not-obscured-enhanced",
+      "techniques": [
+        "C43"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.4.13": {
+      "num": "2.4.13",
+      "handle": "Focus Appearance",
+      "nome": "Aspetto del focus",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#focus-appearance",
+      "techniques": [
+        "C40",
+        "C41"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Annotare outline di focus con spessore >= 2px solid e rapporto di contrasto >= 3:1 rispetto allo stato non focalizzato."
+    },
+    "2.5.1": {
+      "num": "2.5.1",
+      "handle": "Pointer Gestures",
+      "nome": "Gesti di puntamento",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#pointer-gestures",
+      "techniques": [
+        "G215",
+        "G216"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Su slider/mappe con swipe o pinch: prevedere e annotare pulsanti alternativi a singolo tocco (<button aria-label=\"[Precedente/Successivo]\">)."
+    },
+    "2.5.2": {
+      "num": "2.5.2",
+      "handle": "Pointer Cancellation",
+      "nome": "Cancellazione dell'azione di puntamento",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#pointer-cancellation",
+      "techniques": [
+        "G210",
+        "G212"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.5.3": {
+      "num": "2.5.3",
+      "handle": "Label in Name",
+      "nome": "Etichetta nel nome",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#label-in-name",
+      "techniques": [
+        "G208",
+        "G211"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione in Figma (Tecnica W3C G208): se si usa aria-label su un elemento con testo visibile, la stringa di aria-label deve iniziare con l'esatto testo visibile."
+    },
+    "2.5.4": {
+      "num": "2.5.4",
+      "handle": "Motion Actuation",
+      "nome": "Azionamento da movimento",
+      "level": "A",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#motion-actuation",
+      "techniques": [
+        "G213"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.5.5": {
+      "num": "2.5.5",
+      "handle": "Target Size (Enhanced)",
+      "nome": "Dimensione del target (migliorata)",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#target-size-enhanced",
+      "techniques": [
+        "G205"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "2.5.6": {
+      "num": "2.5.6",
+      "handle": "Concurrent Input Mechanisms",
+      "nome": "Meccanismi di input concorrenti",
+      "level": "AAA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#concurrent-input-mechanisms",
+      "techniques": [
+        "G212"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "2.5.7": {
+      "num": "2.5.7",
+      "handle": "Dragging Movements",
+      "nome": "Movimenti di trascinamento",
+      "level": "AA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#dragging-movements",
+      "techniques": [
+        "G219"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Su componenti con drag-and-drop o range slider: progettare e annotare input/pulsanti alternativi azionabili con singolo clic."
+    },
+    "2.5.8": {
+      "num": "2.5.8",
+      "handle": "Target Size (Minimum)",
+      "nome": "Dimensione del target (minimo)",
+      "level": "AA",
+      "principle": "2. Utilizzabile",
+      "url": "https://www.w3.org/TR/WCAG22/#target-size-minimum",
+      "techniques": [
+        "C42"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.1.1": {
+      "num": "3.1.1",
+      "handle": "Language of Page",
+      "nome": "Lingua della pagina",
+      "level": "A",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#language-of-page",
+      "techniques": [
+        "H57"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Annotare a livello pagina (Tecnica W3C H57): <html lang=\"it\"> (o lingua corrente della vista)."
+    },
+    "3.1.2": {
+      "num": "3.1.2",
+      "handle": "Language of Parts",
+      "nome": "Lingua delle parti",
+      "level": "AA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#language-of-parts",
+      "techniques": [
+        "H58"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Su blocchi di testo in lingua straniera annotare (Tecnica W3C H58): <span lang=\"[en|fr|de]\">."
+    },
+    "3.1.3": {
+      "num": "3.1.3",
+      "handle": "Unusual Words",
+      "nome": "Parole insolite",
+      "level": "AAA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#unusual-words",
+      "techniques": [
+        "G62",
+        "G101",
+        "H40"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.1.4": {
+      "num": "3.1.4",
+      "handle": "Abbreviations",
+      "nome": "Abbreviazioni",
+      "level": "AAA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#abbreviations",
+      "techniques": [
+        "G102",
+        "H28"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Su sigle e acronimi annotare (Tecnica W3C H28): <abbr title=\"[forma estesa]\">[SIGLA]</abbr>."
+    },
+    "3.1.5": {
+      "num": "3.1.5",
+      "handle": "Reading Level",
+      "nome": "Livello di lettura",
+      "level": "AAA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#reading-level",
+      "techniques": [
+        "G86",
+        "G153"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.1.6": {
+      "num": "3.1.6",
+      "handle": "Pronunciation",
+      "nome": "Pronuncia",
+      "level": "AAA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#pronunciation",
+      "techniques": [
+        "G120",
+        "G121",
+        "H62"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "3.2.1": {
+      "num": "3.2.1",
+      "handle": "On Focus",
+      "nome": "Al focus",
+      "level": "A",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#on-focus",
+      "techniques": [
+        "G107"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Codice (Front-end)",
+      "annotazione_figma": "-"
+    },
+    "3.2.2": {
+      "num": "3.2.2",
+      "handle": "On Input",
+      "nome": "All'input",
+      "level": "A",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#on-input",
+      "techniques": [
+        "G80",
+        "H32"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Nei form con filtri/select annotare (Tecnica W3C H32): presenza di <button type=\"submit\"> o aggiornamento annunciato via aria-live=\"polite\" senza cambio contesto inatteso."
+    },
+    "3.2.3": {
+      "num": "3.2.3",
+      "handle": "Consistent Navigation",
+      "nome": "Navigazione coerente",
+      "level": "AA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#consistent-navigation",
+      "techniques": [
+        "G61"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.2.4": {
+      "num": "3.2.4",
+      "handle": "Consistent Identification",
+      "nome": "Identificazione coerente",
+      "level": "AA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#consistent-identification",
+      "techniques": [
+        "G197"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "Annotare nome accessibile coerente (aria-label identico) per icone che svolgono la stessa funzione su più pagine."
+    },
+    "3.2.5": {
+      "num": "3.2.5",
+      "handle": "Change on Request",
+      "nome": "Cambiamenti su richiesta",
+      "level": "AAA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#change-on-request",
+      "techniques": [
+        "G76",
+        "H83"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Su link che aprono nuove schede (target=\"_blank\"), annotare icona visiva e avviso per screen reader (aria-label=\"[Testo link] (si apre in una nuova scheda)\")."
+    },
+    "3.2.6": {
+      "num": "3.2.6",
+      "handle": "Consistent Help",
+      "nome": "Aiuto coerente",
+      "level": "A",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#consistent-help",
+      "techniques": [
+        "G220"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.3.1": {
+      "num": "3.3.1",
+      "handle": "Error Identification",
+      "nome": "Identificazione di errori",
+      "level": "A",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#error-identification",
+      "techniques": [
+        "G83",
+        "ARIA18",
+        "ARIA19",
+        "ARIA21"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Inserire annotazione sullo stato errore del campo (Tecnica W3C ARIA21/ARIA19): <input aria-invalid=\"true\" aria-describedby=\"[id-errore]\"> e messaggio con role=\"alert\"."
+    },
+    "3.3.2": {
+      "num": "3.3.2",
+      "handle": "Labels or Instructions",
+      "nome": "Etichette o istruzioni",
+      "level": "A",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#labels-or-instructions",
+      "techniques": [
+        "G131",
+        "H44",
+        "H71",
+        "ARIA1",
+        "ARIA17"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Inserire annotazione sul campo input (Tecnica W3C H44/ARIA1): collegare <label for=\"[id-campo]\"> visibile permanentemente e <span id=\"[id-hint]\"> tramite aria-describedby."
+    },
+    "3.3.3": {
+      "num": "3.3.3",
+      "handle": "Error Suggestion",
+      "nome": "Suggerimenti per gli errori",
+      "level": "AA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#error-suggestion",
+      "techniques": [
+        "G83",
+        "G85",
+        "ARIA18"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.3.4": {
+      "num": "3.3.4",
+      "handle": "Error Prevention (Legal, Financial, Data)",
+      "nome": "Prevenzione degli errori (legali, finanziari, dati)",
+      "level": "AA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#error-prevention-legal-financial-data",
+      "techniques": [
+        "G98",
+        "G99",
+        "G164"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.3.5": {
+      "num": "3.3.5",
+      "handle": "Help",
+      "nome": "Aiuto",
+      "level": "AAA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#help",
+      "techniques": [
+        "G71",
+        "G89",
+        "G184"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.3.6": {
+      "num": "3.3.6",
+      "handle": "Error Prevention (All)",
+      "nome": "Prevenzione degli errori (tutti)",
+      "level": "AAA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#error-prevention-all",
+      "techniques": [
+        "G98",
+        "G99",
+        "G164"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma",
+      "annotazione_figma": "-"
+    },
+    "3.3.7": {
+      "num": "3.3.7",
+      "handle": "Redundant Entry",
+      "nome": "Inserimento ridondante",
+      "level": "A",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#redundant-entry",
+      "techniques": [
+        "G221"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Nei form multi-step annotare (Tecnica W3C G221): auto-popolamento dei dati già inseriti o checkbox \"Usa lo stesso indirizzo\"."
+    },
+    "3.3.8": {
+      "num": "3.3.8",
+      "handle": "Accessible Authentication (Minimum)",
+      "nome": "Autenticazione accessibile (minimo)",
+      "level": "AA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#accessible-authentication-minimum",
+      "techniques": [
+        "G218",
+        "H100"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "Su campi login/password annotare (Tecnica W3C H100): autocomplete=\"current-password\" (o \"new-password\"), sblocco incolla (paste) e pulsante mostra/nascondi password con aria-pressed."
+    },
+    "3.3.9": {
+      "num": "3.3.9",
+      "handle": "Accessible Authentication (Enhanced)",
+      "nome": "Autenticazione accessibile (migliorata)",
+      "level": "AAA",
+      "principle": "3. Comprensibile",
+      "url": "https://www.w3.org/TR/WCAG22/#accessible-authentication-enhanced",
+      "techniques": [
+        "G218",
+        "H100"
+      ],
+      "stato": "Verificata",
+      "dove": "Prototipo Figma + Codice",
+      "annotazione_figma": "-"
+    },
+    "4.1.2": {
+      "num": "4.1.2",
+      "handle": "Name, Role, Value",
+      "nome": "Nome, ruolo, valore",
+      "level": "A",
+      "principle": "4. Robusto",
+      "url": "https://www.w3.org/TR/WCAG22/#name-role-value",
+      "techniques": [
+        "H91",
+        "ARIA4",
+        "ARIA5",
+        "ARIA14",
+        "ARIA16"
+      ],
+      "stato": "Non verificabile",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Inserire annotazione in Figma (Tecnica W3C H91/ARIA14/ARIA5): definire ruolo semantico nativo (<button>, <a>, <input>), nome accessibile (aria-label=\"[...]\") e stati dinamici (aria-expanded=\"true|false\", aria-pressed, aria-checked)."
+    },
+    "4.1.3": {
+      "num": "4.1.3",
+      "handle": "Status Messages",
+      "nome": "Messaggi di stato",
+      "level": "AA",
+      "principle": "4. Robusto",
+      "url": "https://www.w3.org/TR/WCAG22/#status-messages",
+      "techniques": [
+        "ARIA19",
+        "ARIA22",
+        "ARIA23"
+      ],
+      "stato": "Da verificare sul sito",
+      "dove": "Figma (Annotazione) + Codice",
+      "annotazione_figma": "Su banner di conferma, toast, contatori carrello o risultati ricerca annotare (Tecnica W3C ARIA22/ARIA19): role=\"status\" (aria-live=\"polite\") oppure role=\"alert\" per errori urgenti."
+    }
+  }
+}
