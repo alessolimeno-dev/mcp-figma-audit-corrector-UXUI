@@ -60,6 +60,11 @@ try:
         HAS_OPENPYXL,
         openpyxl,
     )
+    from skills.common.lib.wcag_checks import (
+        check_contrast,
+        check_target_size,
+        measure,
+    )
 except ImportError:
     from common.lib.color_utils import (  # type: ignore
         HAS_WCAG_CONTRAST_RATIO,
@@ -83,85 +88,62 @@ except ImportError:
         HAS_OPENPYXL,
         openpyxl,
     )
+    from common.lib.wcag_checks import (  # type: ignore
+        check_contrast,
+        check_target_size,
+        measure,
+    )
 
 _load_wcag_library = load_wcag_library
 
 
-def check_contrast(fg_hex: str, bg_hex: str, is_large_text: bool = False, is_ui_component: bool = False) -> Dict[str, Any]:
+def apply_measurements(item: Dict[str, Any], is_violation: bool = True) -> Dict[str, Any]:
     """
-    Verifica la conformità WCAG 1.4.3 (AA), 1.4.6 (AAA) e 1.4.11 (AA) tramite
-    wcag-contrast-ratio e colorbrew (con fallback nativo automatico).
+    Calcola con check_contrast / check_target_size (tramite `measure`) i valori di una voce che
+    porta `misure` ({"fg","bg"} oppure {"w","h"}) e sovrascrive i numeri scritti dal modello.
+
+    Restituisce {"descrizione","correzione","affidabilita","motivo","avvisi"}: campi da riversare nella
+    voce. Se `misure` manca, restituisce {} (la voce resta com'è: valori non misurati dallo script).
     """
-    ratio = contrast_ratio(fg_hex, bg_hex)
-    threshold = 3.0 if (is_large_text or is_ui_component) else 4.5
-    criterio_num = "1.4.11" if is_ui_component else "1.4.3"
-    wcag_info = WCAG_CRITERIA.get(criterio_num, {})
+    ref = item.get("riferimento") or item.get("ref", "")
+    m = measure(ref, item.get("misure") or {})
+    if not m:
+        return {}
 
-    passes_aa = ratio >= threshold
-    passes_aaa = ratio >= (4.5 if is_large_text else 7.0)
+    avvisi: List[str] = []
+    desc = (item.get("descrizione") or item.get("nota") or "").strip()
+    corr = (item.get("correzione") or item.get("azione") or "").strip()
+    affid = item.get("affidabilita", "Alta")
+    motivo = (item.get("motivo") or "").strip()
+    voce_id = item.get("id") or item.get("elemento", "?")
 
-    # Se `wcag-contrast-ratio` è installata, usa anche i suoi metodi ufficiali `.passes_AA()` e `.passes_AAA()`
-    if HAS_WCAG_CONTRAST_RATIO and _wcag_cr_lib is not None and not is_ui_component:
-        passes_aa = bool(_wcag_cr_lib.passes_AA(ratio, large=is_large_text))
-        passes_aaa = bool(_wcag_cr_lib.passes_AAA(ratio, large=is_large_text))
+    # Numeri del modello in conflitto con la misura: la misura vince, ma lo si segnala.
+    if m["kind"] == "contrasto":
+        for num in re.findall(r"(\d+(?:\.\d+)?)\s*:\s*1", desc):
+            if abs(float(num) - m["ratio"]) > 0.05:
+                avvisi.append(f"{voce_id}: la descrizione dice {num}:1, lo script misura {m['ratio']}:1 (vale la misura).")
+        # il rapporto scritto dal modello viene sempre rimosso: resta solo quello misurato
+        desc = re.sub(r"\s*\(\s*(?:ratio\s*)?\d+(?:\.\d+)?\s*:\s*1\s*\)|\s*(?:ratio\s*)?\d+(?:\.\d+)?\s*:\s*1", "", desc).strip()
 
-    # Se `colorbrew` è installata, calcola il suggerimento colore ad alto contrasto;
-    # altrimenti usa `colorsys` (libreria nativa Python) per modulare la luminosità HLS preservando la tonalità
-    suggested_text = None
-    if HAS_COLORBREW and _colorbrew_cls is not None:
-        try:
-            bg_c = _colorbrew_cls(bg_hex)
-            if hasattr(bg_c, "suggest_text_color"):
-                suggested_text = str(bg_c.suggest_text_color())
-        except Exception:
-            suggested_text = None
-    elif not passes_aa:
-        # Fallback con `colorsys` nativo di Python: mantiene la tonalità (Hue) di fg_hex e regola solo Lightness
-        r, g, b = hex_to_rgb(fg_hex)
-        h, l, s = colorsys.rgb_to_hls(r / 255.0, g / 255.0, b / 255.0)
-        bg_lum = relative_luminance(*hex_to_rgb(bg_hex))
-        should_darken = bg_lum > 0.5
-        for step in range(1, 101):
-            new_l = max(0.0, l - (step / 100.0) * l) if should_darken else min(1.0, l + (step / 100.0) * (1.0 - l))
-            nr, ng, nb = colorsys.hls_to_rgb(h, new_l, s)
-            cand = f"#{int(round(nr*255)):02X}{int(round(ng*255)):02X}{int(round(nb*255)):02X}"
-            if contrast_ratio(cand, bg_hex) >= threshold:
-                suggested_text = cand
-                break
+    desc = f"{desc} | {m['testo']}" if desc else m["testo"]
 
-    return {
-        "criterio": f"WCAG {criterio_num} (AA)",
-        "nome_criterio": wcag_info.get("nome", "Contrasto"),
-        "w3c_url": wcag_info.get("url", ""),
-        "techniques": wcag_info.get("techniques", []),
-        "ratio": ratio,
-        "threshold": threshold,
-        "compliant": passes_aa,
-        "passes_AAA": passes_aaa,
-        "fg": fg_hex,
-        "bg": bg_hex,
-        "suggested_text_colorbrew": suggested_text,
-        "engine": (
-            "wcag-contrast-ratio + colorbrew"
-            if (HAS_WCAG_CONTRAST_RATIO or HAS_COLORBREW)
-            else "W3C Standard Formula (wcag-contrast-ratio compatible)"
-        )
-    }
+    if is_violation and m["compliant"]:
+        avvisi.append(f"{voce_id}: segnalata come violazione ma la misura è conforme ({m['testo']}).")
+        affid = "Da controllare"
+        motivo = (motivo + " " if motivo else "") + "La misura dello script risulta conforme: verificare la segnalazione."
+    if not is_violation and not m["compliant"]:
+        avvisi.append(f"{voce_id}: in 'corretto' ma la misura NON è conforme ({m['testo']}).")
 
+    if is_violation and not m["compliant"] and not corr:
+        if m["kind"] == "contrasto":
+            corr = (f"Portare il colore da {m['fg']} a {m['suggerito_fg']} (stessa tonalità, "
+                    f"contrasto {m['suggerito_ratio']}:1 su {m['bg']})")
+        else:
+            corr = (f"Portare il target a {m['dimensione_finale'][0]:g}x{m['dimensione_finale'][1]:g} px "
+                    f"(+{m['padding_orizzontale_per_lato']:g}px orizzontale e +{m['padding_verticale_per_lato']:g}px verticale per lato)")
 
-def check_target_size(w: float, h: float) -> Dict[str, Any]:
-    """Verifica conformità WCAG 2.5.8 (minimo 24x24 px) e WCAG 2.5.5 (AAA 44x44 px)."""
-    compliant = (w >= 24.0 and h >= 24.0)
-    wcag_info = WCAG_CRITERIA.get("2.5.8", {})
-    return {
-        "criterio": "WCAG 2.5.8 (AA)",
-        "w3c_url": wcag_info.get("url", "https://www.w3.org/TR/WCAG22/#target-size-minimum"),
-        "techniques": wcag_info.get("techniques", ["C42"]),
-        "width": w,
-        "height": h,
-        "compliant": compliant,
-        "recommended_mobile_AAA_2_5_5": (w >= 44.0 and h >= 44.0)
-    }
+    return {"descrizione": desc, "correzione": corr, "affidabilita": affid, "motivo": motivo, "avvisi": avvisi, "misura": m}
+
 
 
 def check_target_distance(box1: Dict[str, float], box2: Dict[str, float]) -> float:
@@ -776,6 +758,20 @@ def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]
         ref = item.get("riferimento") or item.get("ref", "")
         std = lookup_normative_entry(ref)
         v_id = item.get("id") or f"V-{idx+1:02d}"
+        item = dict(item, id=v_id)
+
+        # Misure reali: contrasto e target vengono calcolati qui, non letti dal modello.
+        meas = apply_measurements(item, is_violation=True)
+        if meas:
+            item["descrizione"] = meas["descrizione"]
+            item["correzione"] = meas["correzione"]
+            item["affidabilita"] = meas["affidabilita"]
+            item["motivo"] = meas["motivo"]
+            for w in meas["avvisi"]:
+                print(f"[checker] AVVISO {w}", file=sys.stderr)
+        elif ref and any(k in ref for k in ("1.4.3", "1.4.6", "1.4.11", "2.5.5", "2.5.8")):
+            print(f"[checker] AVVISO {v_id}: {ref} senza 'misure' nel payload: il valore NON è stato misurato dallo script.",
+                  file=sys.stderr)
         elem = item.get("elemento", "")
         ambito = item.get("ambito") or std.get("ambito") or evaluate_ambito(ref)
         stato = item.get("stato") or std.get("stato") or evaluate_stato(ref)
@@ -816,11 +812,15 @@ def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]
     for item in data.get("corretto", []):
         ref = item.get("riferimento") or item.get("ref", "")
         ambito = item.get("ambito") or evaluate_ambito(ref)
+        meas = apply_measurements(item, is_violation=False)
+        if meas:
+            for w in meas["avvisi"]:
+                print(f"[checker] AVVISO {w}", file=sys.stderr)
         corretto_data.append({
             "ambito": ambito,
             "pagina": item.get("pagina", ""),
             "elemento": item.get("elemento", ""),
-            "descrizione": item.get("descrizione", ""),
+            "descrizione": meas["descrizione"] if meas else item.get("descrizione", ""),
             "riferimento": ref
         })
 

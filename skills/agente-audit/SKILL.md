@@ -56,9 +56,19 @@ L'agente delega i calcoli e le definizioni ai moduli condivisi della cartella `s
            "elemento": "Pulsante CTA Carrello",
            "nodo_id": "12:34",
            "riferimento": "WCAG 1.4.3 (AA)",
-           "descrizione": "Contrasto testo insufficiente (#888888 su #FFFFFF, ratio 3.5:1)",
+           "descrizione": "Contrasto testo insufficiente",
            "gravita": "Moderata",
-           "correzione": "Aumentare contrasto a 4.5:1"
+           "misure": { "fg": "#888888", "bg": "#FFFFFF" }
+         },
+         {
+           "id": "V-02",
+           "pagina": "Mobile / Home",
+           "elemento": "Icona chiudi",
+           "nodo_id": "12:40",
+           "riferimento": "WCAG 2.5.8 (AA)",
+           "descrizione": "Target interattivo troppo piccolo",
+           "gravita": "Grave",
+           "misure": { "w": 18, "h": 18 }
          }
        ],
        "corretto": [
@@ -90,10 +100,12 @@ Si usano **solo** questi strumenti del server MCP di Figma, nell'ordine indicato
 | 5 | `get_screenshot` | Solo quando serve un giudizio visivo (euristiche di Nielsen, gerarchia, leggibilità). È lo strumento che costa più token: al massimo uno per frame. |
 
 Questo elenco è applicato anche dall'hook `skills/common/lib/figma_guard.py`, che blocca ogni altro strumento Figma mentre `/audit` è attivo.
-- **Calcoli Deterministici a 0 Token:**
+- **Calcoli Deterministici a 0 Token (eseguiti da `checker.py`, non dal modello):**
   - Contrasto cromatico testo (WCAG 1.4.3: $\ge 4.5:1$ per testo normale, $\ge 3.0:1$ per testo grande $\ge 18$pt o $\ge 14$pt bold).
   - Contrasto componenti grafici e stati interattivi (WCAG 1.4.11: $\ge 3.0:1$).
   - Dimensioni target touch/click (WCAG 2.5.8: $\ge 24\times 24$ px, WCAG 2.5.5: $\ge 44\times 44$ px).
+  - **Come si attivano:** per ogni voce (e per ogni elemento di `corretto`) su 1.4.3, 1.4.6, 1.4.11, 2.5.5, 2.5.8 il payload deve contenere `misure`, con i valori **letti da Figma**: `{"fg","bg"}` (hex; opzionali `"testo_grande": true`, `"componente_ui": true`) oppure `{"w","h"}` in px. Lo script calcola rapporto e conformità (`check_contrast`, `check_target_size` in `skills/common/lib/wcag_checks.py`), scrive la misura nella Descrizione, propone il colore corretto a tonalità costante o il padding e, se la correzione è vuota, la compila.
+  - **Non scrivere il rapporto di contrasto nella `descrizione`**: se presente viene sostituito dal valore misurato. Una voce senza `misure` su questi criteri produce un avviso: il valore non è verificato dallo script. Una voce segnalata ma misurata conforme passa ad Affidabilità `Da controllare`.
 - **Auto-popolamento Tecniche W3C (Colonna P):**
   - Lo script associa in automatico le tecniche W3C (es. `ARIA14` per icone interattive, `H37` per immagini) per prescrivere annotazioni per gli sviluppatori.
 

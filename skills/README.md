@@ -14,7 +14,7 @@ Questa cartella è la **singola fonte di verità** per le skill del repository, 
   - `scripts/corrector.py`: motore deterministico Python per estrazione delle decisioni approvate, calcolo HLS/padding e Log Correzioni.
 - **`common/`**
   - `references/wcag.json`: dataset W3C WCAG 2.2 + 10 Euristiche di Nielsen.
-  - `lib/`: moduli Python condivisi (`color_utils.py`, `normative.py`, `excel_utils.py`) e script degli hook (`figma_guard.py`, `token_log.py`).
+  - `lib/`: moduli Python condivisi (`color_utils.py`, `wcag_checks.py`, `normative.py`, `excel_utils.py`) e script degli hook (`figma_guard.py`, `token_log.py`).
 
 ---
 

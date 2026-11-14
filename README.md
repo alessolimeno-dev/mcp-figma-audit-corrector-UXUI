@@ -61,6 +61,7 @@ mcp-figma-audit-corrector-UXUI/
 │   │   │   └── wcag.json          # Dataset W3C WCAG 2.2 + 10 Euristiche di Nielsen
 │   │   └── lib/
 │   │       ├── color_utils.py     # Contrasto, luminanza, modulazione colore HLS
+│   │       ├── wcag_checks.py     # check_contrast / check_target_size / measure (usate da checker e corrector)
 │   │       ├── normative.py       # Caricamento normativo da wcag.json
 │   │       ├── excel_utils.py     # Gestione OpenPyXL e fallback OpenXML
 │   │       ├── figma_guard.py     # Hook: limita gli strumenti Figma per skill
@@ -122,7 +123,7 @@ Test rapido:
 
 ```bash
 ./.venv/bin/python skills/agente-audit/scripts/checker.py --demo
-./.venv/bin/python skills/agente-correzione/scripts/corrector.py --demo
+./.venv/bin/python skills/agente-correzione/scripts/corrector.py --demo   # solo formule; per il piano reale: --excel <report.xlsx> --plan
 ```
 
 Gli hook in `.claude/settings.json` si attivano nelle sessioni di Claude Code aperte **dopo** la loro configurazione.

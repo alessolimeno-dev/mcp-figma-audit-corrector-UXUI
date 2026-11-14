@@ -29,6 +29,15 @@ L'agente sfrutta gli stessi moduli matematici e normativi impiegati nella Fase 1
 - **`skills/common/lib/color_utils.py`:**
   - `adjust_lightness_for_contrast(fg_hex, bg_hex, target_ratio)`: modula deterministicamente la luminosità (Lightness) in coordinate HLS mantenendo invariata la tonalità (Hue).
   - `calculate_padding_expansion(width, height, min_target)`: calcola l'incremento di padding orizzontale e verticale per raggiungere i target minimi (es. 24px o 44px).
+- **`skills/common/lib/wcag_checks.py`:** `measure(riferimento, misure)` unisce le due formule sopra con `check_contrast` / `check_target_size`: dati `{fg,bg}` o `{w,h}` restituisce conformità, soglia, nuovo colore (HLS e RGB 0-1 per Figma) o padding. È usata da `corrector.py` sia per il piano (`--plan`) sia per la verifica post-intervento.
+
+### Cosa fa lo script e cosa fa Claude
+| Chi | Cosa |
+|---|---|
+| `corrector.py --plan` | Legge l'Excel, calcola i valori da applicare (colore HLS, padding) voce per voce. **Non scrive nulla.** |
+| Claude con `use_figma` | **Applica** i valori del piano sui nodi approvati. `corrector.py` non modifica mai Figma. |
+| Claude con `get_design_context` / `get_metadata` | Rilegge i valori reali del nodo dopo la modifica (fg, bg, larghezza, altezza). |
+| `corrector.py --apply` | Calcola la **misura** sui valori riletti e la scrive nel Log. Senza misura l'esito è `Da verificare`. |
 - **`skills/common/lib/excel_utils.py`:** legge il foglio `Voci`, compila il foglio `Log Correzioni` e popola la data della decisione nel foglio `Voci`.
 
 ---
@@ -66,7 +75,7 @@ Si usano **solo** questi strumenti del server MCP di Figma. Qualunque altro stru
 | `get_variable_defs` | Per il Livello 1 di minima invasività: scegliere la variabile/stile conforme più vicino. |
 | `get_design_context` | Per leggere colori, padding e testi dei soli nodi approvati, prima e dopo la modifica. |
 | `get_screenshot` | Facoltativo: controllo visivo del nodo dopo la modifica. |
-| `use_figma` | **L'unico strumento che modifica il file.** Solo sui nodi delle voci approvate (Decisione `Accolta`/`Modificata` e Chi applica `Agente`/`Entrambi`), una voce alla volta, con i valori calcolati da `corrector.py` / `color_utils.py`. Mai per creare, spostare o eliminare nodi non coinvolti. |
+| `use_figma` | **L'unico strumento che modifica il file.** Solo sui nodi delle voci approvate (Decisione `Accolta`/`Modificata` e Chi applica `Agente`/`Entrambi`), una voce alla volta, con i valori del piano (`corrector.py --plan`): colore `suggerito_fg` / `figma_rgb_suggerito`, padding `padding_*_per_lato`. Non ricalcolare i valori a mano. Mai per creare, spostare o eliminare nodi non coinvolti. |
 
 Questo elenco è applicato anche dall'hook `skills/common/lib/figma_guard.py`, che blocca ogni altro strumento Figma mentre `/correzione` è attivo.
 - **Gerarchia di Minima Invasività per Correzioni Grafiche:**
@@ -78,29 +87,40 @@ Questo elenco è applicato anche dall'hook `skills/common/lib/figma_guard.py`, c
 
 ---
 
-## 5. Comando di Esecuzione dello Script
+## 5. Flusso e comandi dello script
 
 Il file Excel resta nella sua cartella (quella con il nome del file Figma): lo script aggiorna lo stesso file.
 
-L'agente esegue lo script deterministico `corrector.py`:
+**Flusso obbligatorio, nell'ordine:**
+
+1. **Piano (dry-run reale, non scrive nulla):** legge l'Excel, elenca le voci approvate e calcola i valori da applicare.
+2. **Misure mancanti:** per le voci con stato `misure_mancanti` leggi fg/bg o larghezza/altezza da Figma (`get_design_context` / `get_metadata`), salvale in un JSON e rilancia il piano con `--misure-prima`.
+3. **Modifica su Figma:** con `use_figma`, una voce alla volta, applica i valori del piano.
+4. **Rilettura:** rileggi da Figma i valori del nodo dopo la modifica e salvali in `misure-post.json`.
+5. **Log:** `--apply` con `--misure-post` calcola la verifica sulle misure e scrive il Log Correzioni.
 
 ```bash
-# Passo A: Verifica e visualizzazione delle decisioni approvate (Dry-Run):
+# Passo 1: piano di correzione (nessun file modificato; --plan-out salva i valori in JSON)
 <ROOT>/.venv/bin/python <ROOT>/skills/agente-correzione/scripts/corrector.py \
   --excel [percorso-report-audit.xlsx] \
-  --demo
+  --plan [--plan-out piano.json] [--misure-prima misure-prima.json]
 
-# Passo B: Scrittura Log Correzioni:
+# Passo 5: scrittura Log Correzioni con verifica misurata
 <ROOT>/.venv/bin/python <ROOT>/skills/agente-correzione/scripts/corrector.py \
   --excel [percorso-report-audit.xlsx] \
-  --apply
+  --apply --misure-post misure-post.json [--misure-prima misure-prima.json] [--log-json override.json]
 
-# Opzionale: override dettagli log da JSON:
-<ROOT>/.venv/bin/python <ROOT>/skills/agente-correzione/scripts/corrector.py \
-  --excel [percorso-report-audit.xlsx] \
-  --apply \
-  --log-json override.json
+# Solo test delle formule (NON legge l'Excel, non è un dry-run):
+<ROOT>/.venv/bin/python <ROOT>/skills/agente-correzione/scripts/corrector.py --demo
 ```
+
+**Formato dei file di misura** (chiave = ID voce; contrasto `fg`/`bg` in hex, target `w`/`h` in px):
+
+```json
+{ "V-01": {"fg": "#767676", "bg": "#FFFFFF"}, "V-02": {"w": 24, "h": 24} }
+```
+
+`--log-json` accetta solo `azione` e `annotazione` (e `esito`/`verifica` per i criteri non misurabili). Per contrasto (1.4.3, 1.4.6, 1.4.11) e target (2.5.5, 2.5.8) `esito` e `verifica` sono sempre calcolati dalla misura: un override viene ignorato con un avviso.
 
 ---
 
@@ -117,7 +137,7 @@ L'agente esegue lo script deterministico `corrector.py`:
      - `5: Elemento`
      - `6: Azione Eseguita` (dettaglio della correzione applicata su Figma)
      - `7: Annotazione / Codice Applicato` (prescrizione tecnica W3C ARIA/HTML)
-     - `8: Esito` (`Risolto` / `Annotato`)
-     - `9: Verifica Post-Intervento` (rapporto di contrasto post-modifica o dimensioni verificate)
+     - `8: Esito`: `Risolto` (misura post-intervento conforme) / `Non risolto` (misurato, ancora non conforme) / `Annotato` (solo annotazione per sviluppatori) / `Da verificare` (nessuna misura fornita o criterio non misurabile da script)
+     - `9: Verifica Post-Intervento`: la misura calcolata da `wcag_checks.measure()` sui valori riletti da Figma (es. `Misurato dopo l'intervento: #767676 su #FFFFFF = 4.54:1 (soglia 4.5:1) -> conforme`). Mai un testo scritto dal modello
    - **Foglio `Voci`:** Colonna W (`Data della decisione`) popolata automaticamente con la data odierna se lasciata vuota.
-- **Notifica Finale:** riepilogo per l'utente dei nodi modificati su Figma, conferma dell'avvenuto aggiornamento del file Excel.
+- **Notifica Finale:** riepilogo per l'utente dei nodi modificati su Figma e conferma dell'aggiornamento del file Excel. Elenca a parte le voci `Non risolto` e `Da verificare`: non vanno presentate come risolte.
