@@ -11,9 +11,12 @@ Definizione canonica condivisa per **Claude Code** e **Antigravity**.
 
 ## 1. Ambiente di Esecuzione (VENV Locale)
 
-- **Interprete Python Obbligatorio:** Tutte le chiamate agli script devono usare il python locale:
-  - macOS/Linux: `./.venv/bin/python`
-  - Windows: `.venv\Scripts\python.exe`
+- **Cartella del progetto (`<ROOT>`):** la cartella che contiene `skills/`, `.venv/` e `Audit_modello.xlsx`.
+  - Se la sessione è aperta dentro il progetto: `<ROOT>` = `.`
+  - Se la sessione è aperta nella cartella superiore (es. `Analisi-skills/`): `<ROOT>` = `mcp-figma-audit-corrector-UXUI`
+- **Interprete Python Obbligatorio:** tutte le chiamate agli script devono usare il python locale del progetto:
+  - macOS/Linux: `<ROOT>/.venv/bin/python`
+  - Windows: `<ROOT>\.venv\Scripts\python.exe`
 - Non utilizzare l'interprete Python globale di sistema.
 
 ---
@@ -26,7 +29,7 @@ L'agente sfrutta gli stessi moduli matematici e normativi impiegati nella Fase 1
 - **`skills/common/lib/color_utils.py`:**
   - `adjust_lightness_for_contrast(fg_hex, bg_hex, target_ratio)`: modula deterministicamente la luminosità (Lightness) in coordinate HLS mantenendo invariata la tonalità (Hue).
   - `calculate_padding_expansion(width, height, min_target)`: calcola l'incremento di padding orizzontale e verticale per raggiungere i target minimi (es. 24px o 44px).
-- **`skills/common/lib/excel_utils.py`:** legge il foglio `Voci`, compila il foglio `Log Correzioni` e aggiorna i token in `Sessione` e `Riepilogo`.
+- **`skills/common/lib/excel_utils.py`:** legge il foglio `Voci`, compila il foglio `Log Correzioni` e popola la data della decisione nel foglio `Voci`.
 
 ---
 
@@ -46,6 +49,12 @@ L'agente sfrutta gli stessi moduli matematici e normativi impiegati nella Fase 1
 
 ## 4. Elaborazione e Logica Operativa (`WRITE-BOUNDED`)
 
+### Passo 0 — Copia locale del file Figma (obbligatorio, bloccante)
+Prima di qualunque modifica su Figma, l'agente scrive in chat:
+> *"Prima di procedere con le modifiche, salva una copia locale del file Figma: in Figma apri il file → menu File → **Save local copy…** e conserva il file `.fig` (ad esempio nella cartella del report). Rispondimi quando hai fatto."*
+
+e **non modifica alcun nodo** finché l'utente non conferma di aver salvato la copia (o dichiara esplicitamente di volerne fare a meno).
+
 - **Modalità Operativa:** `WRITE-BOUNDED`. Modifica chirurgica limitata esclusivamente ai nodi approvati.
 - **Ispezione Puntuale su Figma:**
   - L'agente richiede via MCP (`get_node` / nodi mirati) solo i nodi indicati nella Colonna D (`ID Nodo Figma`). È vietato richiedere l'intero albero del file.
@@ -60,23 +69,23 @@ L'agente sfrutta gli stessi moduli matematici e normativi impiegati nella Fase 1
 
 ## 5. Comando di Esecuzione dello Script
 
+Il file Excel resta nella sua cartella (quella con il nome del file Figma): lo script aggiorna lo stesso file.
+
 L'agente esegue lo script deterministico `corrector.py`:
 
 ```bash
 # Passo A: Verifica e visualizzazione delle decisioni approvate (Dry-Run):
-./.venv/bin/python skills/agente-correzione/scripts/corrector.py \
+<ROOT>/.venv/bin/python <ROOT>/skills/agente-correzione/scripts/corrector.py \
   --excel [percorso-report-audit.xlsx] \
   --demo
 
-# Passo B: Scrittura Log Correzioni e aggiornamento bilancio Token:
-./.venv/bin/python skills/agente-correzione/scripts/corrector.py \
+# Passo B: Scrittura Log Correzioni:
+<ROOT>/.venv/bin/python <ROOT>/skills/agente-correzione/scripts/corrector.py \
   --excel [percorso-report-audit.xlsx] \
-  --apply \
-  --token-correzione "[token-usati-fase-2]" \
-  --token-totali "[totale-token-audit+correzione]"
+  --apply
 
 # Opzionale: override dettagli log da JSON:
-./.venv/bin/python skills/agente-correzione/scripts/corrector.py \
+<ROOT>/.venv/bin/python <ROOT>/skills/agente-correzione/scripts/corrector.py \
   --excel [percorso-report-audit.xlsx] \
   --apply \
   --log-json override.json
@@ -99,7 +108,5 @@ L'agente esegue lo script deterministico `corrector.py`:
      - `7: Annotazione / Codice Applicato` (prescrizione tecnica W3C ARIA/HTML)
      - `8: Esito` (`Risolto` / `Annotato`)
      - `9: Verifica Post-Intervento` (rapporto di contrasto post-modifica o dimensioni verificate)
-   - **Foglio `Sessione`:** Riga 15 aggiornata con i token di Fase 2; Riga 16 con il totale processo.
-   - **Foglio `Riepilogo`:** Celle A54/B54 e A55/B55 aggiornate con il bilancio finale dei token.
    - **Foglio `Voci`:** Colonna W (`Data della decisione`) popolata automaticamente con la data odierna se lasciata vuota.
-- **Notifica Finale:** riepilogo per l'utente dei nodi modificati su Figma e conferma dell'avvenuto aggiornamento del file Excel.
+- **Notifica Finale:** riepilogo per l'utente dei nodi modificati su Figma, conferma dell'avvenuto aggiornamento del file Excel.

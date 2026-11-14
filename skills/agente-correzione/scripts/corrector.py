@@ -9,7 +9,7 @@ Allineato a checker.py (Skill 1) con librerie ufficiali a 0 Token AI:
 - Dizionario normativo condiviso:
   * Legge da skills/common/references/wcag.json tramite common.lib.normative (86 criteri W3C WCAG 2.2 + 10 Euristiche di Nielsen)
 - Legge la nuova colonna P 'Suggerimento (Annotazioni in Figma)' e le colonne del progettista (R-W)
-- Compila il foglio 'Log Correzioni' e aggiorna il calcolo finale dei Token nei fogli 'Sessione' e 'Riepilogo'
+- Compila il foglio 'Log Correzioni' e popola la Data della decisione nel foglio 'Voci'
 """
 
 import sys
@@ -132,24 +132,6 @@ def _build_resolution_details(item: Dict[str, Any]) -> Tuple[str, str, str, str]
         verifica = f"Conformità post-intervento verificata per {ref} — {nome_std}{tech_str}."
 
     return azione, annotazione, "Risolto", verifica
-
-
-def _compute_total_tokens_text(tok_audit_str: str, tok_corr_str: str, explicit_total: Optional[str] = None) -> str:
-    """Calcola o formatta il totale dei token (Audit + Correzione)."""
-    if explicit_total:
-        return explicit_total
-    # Cerca eventuali numeri interi (es. 1420 o 1.420) nelle due stringhe per sommarli
-    def extract_first_int(s: str) -> Optional[int]:
-        s_clean = re.sub(r"(\d)\.(\d{3})", r"\1\2", s)
-        m = re.search(r"~?\s*(\d{2,6})\s*token", s_clean, re.IGNORECASE)
-        return int(m.group(1)) if m else None
-
-    n_aud = extract_first_int(tok_audit_str)
-    n_cor = extract_first_int(tok_corr_str)
-    if n_aud is not None and n_cor is not None:
-        tot = n_aud + n_cor
-        return f"~{tot:,} token complessivi (Audit: {n_aud:,} + Correzione: {n_cor:,}; 0 token per librerie W3C/colore)".replace(",", ".")
-    return f"Audit: [{tok_audit_str}] + Correzione: [{tok_corr_str}]"
 
 
 def extract_approved_corrections(excel_path: str) -> List[Dict[str, Any]]:
@@ -313,42 +295,19 @@ def _extract_approved_corrections_xml(excel_path: str) -> List[Dict[str, Any]]:
 def apply_corrections_and_log(
     excel_path: str,
     log_overrides: Optional[Dict[str, Dict[str, str]]] = None,
-    output_path: Optional[str] = None,
-    token_correzione: Optional[str] = None,
-    token_totali: Optional[str] = None
+    output_path: Optional[str] = None
 ) -> str:
     """
     Legge le voci approvate da Excel, calcola le correzioni tramite le librerie ufficiali,
-    compila la scheda 'Log Correzioni' e aggiorna il calcolo finale dei Token nei fogli 'Sessione' e 'Riepilogo'.
+    compila la scheda 'Log Correzioni' e popola la Data della decisione nel foglio 'Voci'.
     """
     approved_items = extract_approved_corrections(excel_path)
-    tok_corr_str = token_correzione or "0 token per calcoli W3C/colore (corrector.py); ~600 token LLM per applicazione mirata sui nodi"
 
     if not HAS_OPENPYXL:
-        return _apply_corrections_xml(excel_path, approved_items, log_overrides, output_path, tok_corr_str, token_totali)
+        raise RuntimeError("openpyxl non disponibile: usa l'interprete del progetto (<ROOT>/.venv/bin/python).")
 
     wb = openpyxl.load_workbook(excel_path)
     ws_voci = wb["Voci"]
-
-    # Aggiorna il bilancio Token in Sessione e Riepilogo
-    tok_audit_existing = ""
-    if "Sessione" in wb.sheetnames:
-        s_sess = wb["Sessione"]
-        tok_audit_existing = str(s_sess.cell(14, 2).value or "")
-        tot_str = _compute_total_tokens_text(tok_audit_existing, tok_corr_str, token_totali)
-        s_sess.cell(15, 1, "Token utilizzati — Fase Correzione (Skill 2)")
-        s_sess.cell(15, 2, tok_corr_str)
-        s_sess.cell(16, 1, "Totale Token Processo Completo")
-        s_sess.cell(16, 2, tot_str)
-    else:
-        tot_str = _compute_total_tokens_text("", tok_corr_str, token_totali)
-
-    if "Riepilogo" in wb.sheetnames:
-        s_riep = wb["Riepilogo"]
-        s_riep["A54"] = "Token utilizzati — Fase Correzione (Skill 2)"
-        s_riep["B54"] = tok_corr_str
-        s_riep["A55"] = "Totale Token Processo Completo"
-        s_riep["B55"] = tot_str
 
     if not approved_items:
         target_path = output_path or excel_path
@@ -401,92 +360,14 @@ def apply_corrections_and_log(
     return target_path
 
 
-def _apply_corrections_xml(
-    excel_path: str,
-    approved_items: List[Dict[str, Any]],
-    log_overrides: Optional[Dict[str, Dict[str, str]]],
-    output_path: Optional[str],
-    tok_corr_str: str,
-    token_totali: Optional[str]
-) -> str:
-    """Fallback OpenXML standard library per aggiornare Token in Sessione/Riepilogo e Data Decisione."""
-    NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
-    ET.register_namespace('', NS)
-
-    def qn(tag: str) -> str:
-        return f'{{{NS}}}{tag}'
-
-    def set_inline_str(row_el: ET.Element, coord: str, text: str, default_style: str = '22'):
-        c = None
-        for cell in row_el.findall(qn('c')):
-            if cell.attrib.get('r') == coord:
-                c = cell
-                break
-        if c is None:
-            c = ET.SubElement(row_el, qn('c'), {'r': coord, 's': default_style})
-        style = c.attrib.get('s', default_style)
-        c.clear()
-        c.attrib.update({'r': coord, 's': style, 't': 'inlineStr'})
-        is_el = ET.SubElement(c, qn('is'))
-        t_el = ET.SubElement(is_el, qn('t'))
-        t_el.text = str(text)
-
-    def get_or_create_row(sd: ET.Element, rn: int) -> ET.Element:
-        for row in sd.findall(qn('row')):
-            if int(row.attrib.get('r', '0')) == rn:
-                return row
-        return ET.SubElement(sd, qn('row'), {'r': str(rn)})
-
-    target_path = output_path or excel_path
-    buf = io.BytesIO()
-    with zipfile.ZipFile(excel_path, 'r') as zin:
-        tot_str = _compute_total_tokens_text("", tok_corr_str, token_totali)
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zout:
-            for item in zin.infolist():
-                data = zin.read(item.filename)
-                if item.filename == 'xl/worksheets/sheet2.xml':
-                    root = ET.fromstring(data)
-                    sd = root.find(qn('sheetData'))
-                    if sd is not None:
-                        r14 = get_or_create_row(sd, 14)
-                        t_aud_el = r14.find(f".//{qn('t')}")
-                        tok_aud = t_aud_el.text if t_aud_el is not None and t_aud_el.text else ""
-                        tot_str = _compute_total_tokens_text(tok_aud, tok_corr_str, token_totali)
-                        r15 = get_or_create_row(sd, 15)
-                        set_inline_str(r15, 'A15', 'Token utilizzati — Fase Correzione (Skill 2)', '21')
-                        set_inline_str(r15, 'B15', tok_corr_str, '22')
-                        r16 = get_or_create_row(sd, 16)
-                        set_inline_str(r16, 'A16', 'Totale Token Processo Completo', '21')
-                        set_inline_str(r16, 'B16', tot_str, '22')
-                    data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-                elif item.filename == 'xl/worksheets/sheet5.xml':
-                    root = ET.fromstring(data)
-                    sd = root.find(qn('sheetData'))
-                    if sd is not None:
-                        r54 = get_or_create_row(sd, 54)
-                        set_inline_str(r54, 'A54', 'Token utilizzati — Fase Correzione (Skill 2)', '27')
-                        set_inline_str(r54, 'B54', tok_corr_str, '27')
-                        r55 = get_or_create_row(sd, 55)
-                        set_inline_str(r55, 'A55', 'Totale Token Processo Completo', '27')
-                        set_inline_str(r55, 'B55', tot_str, '27')
-                    data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-                zout.writestr(item, data)
-
-    with open(target_path, 'wb') as f:
-        f.write(buf.getvalue())
-    return target_path
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="corrector.py — Motore deterministico per l'Agente di Correzione (W3C wcag.json + wcag-contrast-ratio + colorbrew + colorsys)"
     )
     parser.add_argument("--demo", action="store_true", help="Esegue test correzioni matematiche e dizionario condiviso wcag.json")
     parser.add_argument("--excel", help="Percorso del report Excel di audit contenente le decisioni")
-    parser.add_argument("--apply", action="store_true", help="Esegue le correzioni approvate, scrive Log Correzioni e aggiorna i Token")
+    parser.add_argument("--apply", action="store_true", help="Esegue le correzioni approvate e scrive il foglio Log Correzioni")
     parser.add_argument("--log-json", help="Percorso file JSON opzionale con note e override delle correzioni")
-    parser.add_argument("--token-correzione", help="Indicazione dei token utilizzati nella Fase di Correzione (Skill 2)")
-    parser.add_argument("--token-totali", help="Indicazione opzionale del totale token complessivo (Audit + Correzione)")
     parser.add_argument("--out", help="Percorso opzionale per il file Excel salvato (default: sovrascrive --excel)")
 
     args = parser.parse_args()
@@ -513,11 +394,9 @@ def main():
         saved = apply_corrections_and_log(
             args.excel,
             overrides,
-            args.out,
-            args.token_correzione,
-            args.token_totali
+            args.out
         )
-        print(f"Correzioni e bilancio finale Token salvati in: {saved}")
+        print(f"Correzioni salvate in: {saved}")
         sys.exit(0)
 
     parser.print_help()

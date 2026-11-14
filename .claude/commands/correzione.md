@@ -1,14 +1,14 @@
 ---
-description: Applica sul prototipo Figma le correzioni approvate dal progettista nel report Excel
+description: Applica sul prototipo Figma le correzioni approvate dal progettista nel report Excel (alias di /correzione)
 ---
 
-# Comando Slash /correttore
+# Comando Slash /correzione
 
 Puntatore alla skill comune: [skills/agente-correzione/SKILL.md](../../skills/agente-correzione/SKILL.md).
 
 ## Sintassi
 ```text
-/correttore [link-figma] [file-excel]
+/correzione [link-figma] [file-excel]
 ```
 
 ## Istruzioni

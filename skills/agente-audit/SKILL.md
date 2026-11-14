@@ -11,9 +11,12 @@ Definizione canonica condivisa per **Claude Code** e **Antigravity**.
 
 ## 1. Ambiente di Esecuzione (VENV Locale)
 
-- **Interprete Python Obbligatorio:** Tutte le chiamate agli script devono usare il python locale:
-  - macOS/Linux: `./.venv/bin/python`
-  - Windows: `.venv\Scripts\python.exe`
+- **Cartella del progetto (`<ROOT>`):** la cartella che contiene `skills/`, `.venv/` e `Audit_modello.xlsx`.
+  - Se la sessione è aperta dentro il progetto: `<ROOT>` = `.`
+  - Se la sessione è aperta nella cartella superiore (es. `Analisi-skills/`): `<ROOT>` = `mcp-figma-audit-corrector-UXUI`
+- **Interprete Python Obbligatorio:** tutte le chiamate agli script devono usare il python locale del progetto:
+  - macOS/Linux: `<ROOT>/.venv/bin/python`
+  - Windows: `<ROOT>\.venv\Scripts\python.exe`
 - Non utilizzare l'interprete Python globale di sistema.
 
 ---
@@ -85,34 +88,38 @@ L'agente delega i calcoli e le definizioni ai moduli condivisi della cartella `s
 
 ## 5. Comando di Esecuzione dello Script
 
-L'agente esegue lo script deterministico `checker.py` passando il payload:
+### Cartella di output
+Il report viene **sempre** salvato in una cartella con il nome del file Figma analizzato (`session.file_figma`):
+`<cartella corrente>/<nome file Figma>/<nome file Figma>-<data>-audit.xlsx`.
+Lo script crea la cartella da solo; `--out-root` cambia la cartella base. Salva anche il `payload.json` dentro la stessa cartella.
 
 ```bash
 # Esecuzione con file JSON:
-./.venv/bin/python skills/agente-audit/scripts/checker.py \
-  --template Audit_modello.xlsx \
-  --out [nome-prototipo]-[data]-audit.xlsx \
-  --input-json payload.json
+<ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/checker.py \
+  --template <ROOT>/Audit_modello.xlsx \
+  --input-json "<nome file Figma>/payload.json"
 
 # In alternativa via standard input:
-cat payload.json | ./.venv/bin/python skills/agente-audit/scripts/checker.py \
-  --template Audit_modello.xlsx \
-  --out [nome-prototipo]-[data]-audit.xlsx \
+cat payload.json | <ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/checker.py \
+  --template <ROOT>/Audit_modello.xlsx \
   --stdin
 
 # Verifica preliminare dataset e formule:
-./.venv/bin/python skills/agente-audit/scripts/checker.py --demo
+<ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/checker.py --demo
 ```
 
 ---
 
 ## 6. Definizione OUTPUT
 
-- **File Excel di Audit Generato (`[nome-prototipo]-[data]-audit.xlsx`):**
-  1. **Foglio `Sessione`:** metadati completi dell'audit e tracciamento token Fase 1.
+- **File Excel di Audit Generato (`<nome file Figma>/<nome file Figma>-<data>-audit.xlsx`):**
+  1. **Foglio `Sessione`:** metadati completi dell'audit.
   2. **Foglio `Voci` (23 Colonne):**
      - *Colonne A-Q compilate dall'agente:* `ID`, `Pagina`, `Elemento`, `ID Nodo Figma` (colonna D), `Ambito`, `Riferimento`, `Descrizione`, `Gravità`, `Stato`, `Affidabilità`, `Motivo`, `Conflitto`, `Motivo conflitto`, `Correzione proposta`, `Dove si corregge`, `Suggerimento (Annotazioni in Figma)` (colonna P), `Fonte`.
      - *Colonne R-W vuote (riservate al Progettista):* `Decisione`, `Motivo`, `Tipo motivo`, `Gravità confermata`, `Chi applica la correzione`, `Data decisione`.
   3. **Foglio `Corretto`:** elementi esaminati e conformi.
-  4. **Foglio `Riepilogo`:** matrice d'impatto incrociata (Gravità $\times$ Ambito) e statistiche token.
-- **Passaggio di Consegna:** l'agente comunica all'utente il percorso del file generato e attende che il progettista compili le decisioni (Human-in-the-Loop).
+  4. **Foglio `Riepilogo`:** matrice d'impatto incrociata (Gravità $\times$ Ambito).
+- **Passaggio di Consegna:** l'agente comunica all'utente in chat:
+  1. il percorso del file generato;
+  2. il promemoria: *"Prima della Fase 2 (correzione), salva una copia locale del file Figma: File → Save local copy… (.fig)"*.
+  Poi attende che il progettista compili le decisioni (Human-in-the-Loop).

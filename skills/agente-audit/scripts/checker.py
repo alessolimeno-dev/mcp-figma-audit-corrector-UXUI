@@ -11,7 +11,6 @@ Architettura a 0 Token AI basata su librerie e dataset standard ufficiali:
 - Usabilità:
   * 10 Euristiche di Jakob Nielsen (Nielsen, 1994a CHI '94; Nielsen, 1994b; NN/g https://www.nngroup.com/articles/ten-usability-heuristics/)
 - Compilazione automatica a 0 token della colonna 'Suggerimento (Annotazioni in Figma)'
-- Tracciamento dei Token utilizzati nei fogli 'Sessione' e 'Riepilogo'
 """
 
 import math
@@ -294,8 +293,7 @@ def normalize_gravita(val: Any) -> str:
 
 def calculate_riepilogo_stats(voci: List[Dict[str, Any]], session_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Calcola deterministicamente in Python la matrice di Riepilogo inserendo gli ID delle voci
-    e il bilancio dei Token utilizzati (Fase Audit + Fase Correzione + Totale).
+    Calcola deterministicamente in Python la matrice di Riepilogo inserendo gli ID delle voci.
     """
     matrix_ids = {
         ('Usabilità', 'Lieve'): [],
@@ -397,22 +395,9 @@ def calculate_riepilogo_stats(voci: List[Dict[str, Any]], session_data: Optional
     stats['B48'] = fmt_total(dove_ids['Figma (Annotazione) + Codice'])
     stats['B49'] = fmt_total(dove_ids['Codice (Front-end)'])
 
-    # Righe aggiuntive in Riepilogo: Annotazioni Figma suggerite e Bilancio Token
-    sess = session_data or {}
-    tok_audit = str(sess.get('token_audit', 'Calcolo deterministico locale: 0 token per librerie W3C/colore; ~1.500 token LLM (micro-payload)'))
-    tok_corr = str(sess.get('token_correzione', 'In attesa di Fase 2 (Agente di Correzione)'))
-    tok_tot = str(sess.get('token_totali', tok_audit))
-
+    # Riga aggiuntiva in Riepilogo: Annotazioni Figma suggerite
     stats['A50'] = 'Voci con Suggerimento Annotazione Figma'
     stats['B50'] = fmt_total(annotazioni_suggerite_ids)
-    stats['A52'] = 'Consumo Token AI (Tracciabilità Processo)'
-    stats['B52'] = 'Dettaglio Token'
-    stats['A53'] = 'Token utilizzati — Fase Audit (Skill 1)'
-    stats['B53'] = tok_audit
-    stats['A54'] = 'Token utilizzati — Fase Correzione (Skill 2)'
-    stats['B54'] = tok_corr
-    stats['A55'] = 'Totale Token Processo Completo'
-    stats['B55'] = tok_tot
 
     return stats
 
@@ -475,7 +460,6 @@ def compile_audit_report(
     Compila deterministicamente l'audit report clonando Audit_modello.xlsx.
     Include:
     - Colonna P 'Suggerimento (Annotazioni in Figma)' nel foglio Voci (23 colonne: A-Q Agente, R-W Progettista)
-    - Righe Token utilizzati (Audit, Correzione, Totale) nei fogli 'Sessione' e 'Riepilogo'.
     """
     shutil.copyfile(template_path, output_path)
     stats = calculate_riepilogo_stats(voci_data, session_data)
@@ -489,7 +473,7 @@ def compile_audit_report(
     if 'Istruzioni' in wb.sheetnames:
         del wb['Istruzioni']
 
-    # 2. Compila Sessione (con righe finali Token utilizzati)
+    # 2. Compila Sessione
     s_sess = wb['Sessione']
     s_sess.cell(4, 2, session_data.get('caso', ''))
     s_sess.cell(5, 2, session_data.get('file_figma', ''))
@@ -503,12 +487,6 @@ def compile_audit_report(
     s_sess.cell(12, 1, 'Modello e versione AI')
     s_sess.cell(12, 2, session_data.get('modello', ''))
     s_sess.cell(13, 2, session_data.get('note', ''))
-    s_sess.cell(14, 1, 'Token utilizzati — Fase Audit (Skill 1)')
-    s_sess.cell(14, 2, session_data.get('token_audit', '0 token per librerie W3C/colore; ~1.500 token LLM (micro-payload)'))
-    s_sess.cell(15, 1, 'Token utilizzati — Fase Correzione (Skill 2)')
-    s_sess.cell(15, 2, session_data.get('token_correzione', 'In attesa di Fase 2 (Agente di Correzione)'))
-    s_sess.cell(16, 1, 'Totale Token Processo Completo')
-    s_sess.cell(16, 2, session_data.get('token_totali', session_data.get('token_audit', '')))
 
     # 3. Compila Voci (23 colonne: A-Q Agente con P='Suggerimento (Annotazioni in Figma)', R-W Progettista)
     s_voci = wb['Voci']
@@ -568,7 +546,7 @@ def compile_audit_report(
         s_corr.cell(r, 4, item.get('descrizione', ''))
         s_corr.cell(r, 5, ref)
 
-    # 5. Compila Riepilogo + righe Token
+    # 5. Compila Riepilogo
     s_riep = wb['Riepilogo']
     s_riep['B3'] = 'Lieve'
     s_riep['C3'] = 'Moderata'
@@ -667,9 +645,6 @@ def _compile_audit_report_xml(
                         11: ('Estensione Figma e versione', session_data.get('estensione', '')),
                         12: ('Modello e versione AI', session_data.get('modello', '')),
                         13: ('Note', session_data.get('note', '')),
-                        14: ('Token utilizzati — Fase Audit (Skill 1)', session_data.get('token_audit', '')),
-                        15: ('Token utilizzati — Fase Correzione (Skill 2)', session_data.get('token_correzione', 'In attesa di Fase 2 (Agente di Correzione)')),
-                        16: ('Totale Token Processo Completo', session_data.get('token_totali', session_data.get('token_audit', ''))),
                     }
                     if sd is not None:
                         for rn, (label_txt, val_txt) in sess_map.items():
@@ -774,14 +749,9 @@ def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]
     """
     Compila il report Excel a partire da un micro-payload JSON.
     Espande automaticamente a 0 token tutti i dati da references/wcag.json (86 criteri W3C + 10 Nielsen),
-    inclusa la nuova colonna 'Suggerimento (Annotazioni in Figma)' e il bilancio dei Token.
+    inclusa la nuova colonna 'Suggerimento (Annotazioni in Figma)'.
     """
     raw_sess = data.get("session", {})
-    default_tok_audit = "0 token per librerie (W3C wcag.json, wcag-contrast-ratio, colorbrew); ~1.500 token LLM per micro-payload"
-    tok_audit = raw_sess.get("token_audit") or data.get("token_audit") or default_tok_audit
-    tok_corr = raw_sess.get("token_correzione") or data.get("token_correzione") or "In attesa di Fase 2 (Agente di Correzione)"
-    tok_tot = raw_sess.get("token_totali") or data.get("token_totali") or tok_audit
-
     session_data = {
         "caso": raw_sess.get("caso", "Prototipo Figma"),
         "file_figma": raw_sess.get("file_figma", "Prototipo"),
@@ -798,10 +768,7 @@ def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]
         "note": raw_sess.get(
             "note",
             "Report generato a 0 token tramite checker.py, W3C wcag.json, wcag-contrast-ratio e colorbrew"
-        ),
-        "token_audit": tok_audit,
-        "token_correzione": tok_corr,
-        "token_totali": tok_tot
+        )
     }
 
     voci_data = []
@@ -863,13 +830,41 @@ def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]
     return compile_audit_report(template_path, output_path, session_data, voci_data, corretto_data)
 
 
+def figma_folder_name(session: Dict[str, Any]) -> str:
+    """Nome cartella di output = nome del file Figma analizzato (caratteri non validi rimossi)."""
+    name = str(session.get("file_figma") or session.get("caso") or "Figma senza nome").strip()
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", name)
+    name = re.sub(r"\s+", " ", name).strip(" .-")
+    return name or "Figma senza nome"
+
+
+def resolve_output_path(session: Dict[str, Any], out_arg: Optional[str], out_root: Optional[str]) -> str:
+    """
+    Il report viene SEMPRE salvato in <out_root>/<nome file Figma>/<nome file>.xlsx.
+    Se --out contiene già una cartella con il nome del Figma, viene rispettata.
+    """
+    folder = figma_folder_name(session)
+    root = os.path.abspath(out_root or os.getcwd())
+    if out_arg:
+        filename = os.path.basename(out_arg)
+        if not filename.lower().endswith(".xlsx"):
+            filename += ".xlsx"
+        parent = os.path.dirname(os.path.abspath(out_arg))
+        if os.path.basename(parent) == folder:
+            return os.path.join(parent, filename)
+    else:
+        filename = f"{folder}-{datetime.now().strftime('%Y-%m-%d')}-audit.xlsx"
+    return os.path.join(root, folder, filename)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="checker.py — Motore deterministico per l'Agente di Audit (W3C wcag.json + wcag-contrast-ratio + colorbrew)"
     )
     parser.add_argument("--demo", action="store_true", help="Esegue test dimostrativo librerie W3C e dizionario wcag.json")
     parser.add_argument("--template", default="Audit_modello.xlsx", help="Percorso del template Audit_modello.xlsx")
-    parser.add_argument("--out", help="Percorso file Excel di destinazione (.xlsx)")
+    parser.add_argument("--out", help="Nome del file Excel (.xlsx). Viene sempre salvato nella cartella con il nome del file Figma")
+    parser.add_argument("--out-root", help="Cartella base in cui creare la cartella con il nome del Figma (default: cartella corrente)")
     parser.add_argument("--input-json", help="Percorso file JSON contenente {session, voci, corretto}")
     parser.add_argument("--stdin", action="store_true", help="Legge il payload JSON dallo standard input")
 
@@ -885,7 +880,7 @@ def main():
         print(f"Suggerimento Annotazione Figma per pulsante solo-icona -> {sugg}")
         sys.exit(0)
 
-    if args.out and (args.input_json or args.stdin):
+    if args.input_json or args.stdin:
         if args.stdin:
             raw_data = json.load(sys.stdin)
         else:
@@ -898,7 +893,9 @@ def main():
             if os.path.exists(alt_template):
                 template_file = alt_template
 
-        out_path = compile_from_json(template_file, args.out, raw_data)
+        sess = raw_data.setdefault("session", {})
+        final_out = resolve_output_path(sess, args.out, args.out_root)
+        out_path = compile_from_json(template_file, final_out, raw_data)
         print(f"Report Excel compilato con successo: {out_path}")
         sys.exit(0)
 

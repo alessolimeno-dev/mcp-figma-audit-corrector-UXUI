@@ -27,7 +27,8 @@ mcp-figma-audit-corrector-UXUI/
 ├── .claude/                        # Configurazione per Claude Code
 │   ├── commands/
 │   │   ├── audit.md               # Definizione slash command /audit
-│   │   └── correttore.md          # Definizione slash command /correttore
+│   │   ├── correttore.md          # Definizione slash command /correttore
+│   │   └── correzione.md          # Alias: slash command /correzione
 │   └── mcp.json                   # Configurazione connettore MCP Figma per Claude
 ├── skills/
 │   ├── README.md                  # Panoramica della base comune delle skill
@@ -77,8 +78,9 @@ Nella sessione di Claude Code sono disponibili i comandi slash dedicati:
   ```
 * **Correzione:**
   ```text
-  /correttore [link-progetto-figma] [percorso-report-audit.xlsx]
+  /correzione [link-progetto-figma] [percorso-report-audit.xlsx]
   ```
+  (`/correttore` resta disponibile come alias.)
 
 ### 2. Con Antigravity
 Grazie al puntatore `.agents/skills.json` e alla regola in `.agents/rules/audit-corrector.md`, Antigravity rileva direttamente la cartella comune `skills/`:
