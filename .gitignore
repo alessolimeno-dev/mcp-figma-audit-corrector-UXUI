@@ -1,3 +1,10 @@
-.agents/
+# Ambiente Python locale
 .venv/
+__pycache__/
+*.pyc
+
+# Log dei token scritti dall'hook
 logs/
+
+# File di sistema macOS
+.DS_Store

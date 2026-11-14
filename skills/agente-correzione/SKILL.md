@@ -5,7 +5,7 @@ description: Applica sul prototipo Figma le correzioni approvate dal progettista
 
 # Skill: Agente di Correzione UI/UX (Fase 2)
 
-Definizione canonica condivisa per **Claude Code** e **Antigravity**.
+Definizione canonica per **Claude Code**. Figma si raggiunge solo tramite il connettore Figma attivo sull'account Claude.
 
 ---
 
@@ -49,15 +49,26 @@ L'agente sfrutta gli stessi moduli matematici e normativi impiegati nella Fase 1
 
 ## 4. Elaborazione e Logica Operativa (`WRITE-BOUNDED`)
 
-### Passo 0 — Copia locale del file Figma (obbligatorio, bloccante)
-Prima di qualunque modifica su Figma, l'agente scrive in chat:
-> *"Prima di procedere con le modifiche, salva una copia locale del file Figma: in Figma apri il file → menu File → **Save local copy…** e conserva il file `.fig` (ad esempio nella cartella del report). Rispondimi quando hai fatto."*
-
-e **non modifica alcun nodo** finché l'utente non conferma di aver salvato la copia (o dichiara esplicitamente di volerne fare a meno).
+### Promemoria copia locale (non bloccante)
+All'inizio l'agente suggerisce in chat di salvare una copia locale del file Figma (File → **Save local copy…**) prima delle modifiche. È solo un consiglio: l'agente lavora sempre sul file Figma online e procede anche se la copia non viene fatta.
 
 - **Modalità Operativa:** `WRITE-BOUNDED`. Modifica chirurgica limitata esclusivamente ai nodi approvati.
 - **Ispezione Puntuale su Figma:**
-  - L'agente richiede via MCP (`get_node` / nodi mirati) solo i nodi indicati nella Colonna D (`ID Nodo Figma`). È vietato richiedere l'intero albero del file.
+  - L'agente legge solo i nodi indicati nella Colonna D (`ID Nodo Figma`). È vietato richiedere l'intero albero del file.
+
+### Strumenti Figma consentiti (elenco chiuso)
+Si usano **solo** questi strumenti del server MCP di Figma. Qualunque altro strumento Figma è vietato (es. `html_to_figma`, `send_code_to_figma`, `create_new_file`, `upload_assets`, `generate_*`).
+
+| Strumento | Quando usarlo |
+|---|---|
+| `create_session` | Una volta, all'inizio, con il `fileKey` preso dal link. |
+| `get_metadata` | Per trovare e verificare i nodi della Colonna D (esistenza, dimensioni prima/dopo la modifica). |
+| `get_variable_defs` | Per il Livello 1 di minima invasività: scegliere la variabile/stile conforme più vicino. |
+| `get_design_context` | Per leggere colori, padding e testi dei soli nodi approvati, prima e dopo la modifica. |
+| `get_screenshot` | Facoltativo: controllo visivo del nodo dopo la modifica. |
+| `use_figma` | **L'unico strumento che modifica il file.** Solo sui nodi delle voci approvate (Decisione `Accolta`/`Modificata` e Chi applica `Agente`/`Entrambi`), una voce alla volta, con i valori calcolati da `corrector.py` / `color_utils.py`. Mai per creare, spostare o eliminare nodi non coinvolti. |
+
+Questo elenco è applicato anche dall'hook `skills/common/lib/figma_guard.py`, che blocca ogni altro strumento Figma mentre `/correzione` è attivo.
 - **Gerarchia di Minima Invasività per Correzioni Grafiche:**
   1. *Livello 1 - Token di Progetto:* Se il progetto ha variabili colore o stili, applica il token conforme più vicino.
   2. *Livello 2 - Spaziature/Padding:* Per bottoni o icone sotto target, espande il padding secondo la formula deterministica di `color_utils.py`.

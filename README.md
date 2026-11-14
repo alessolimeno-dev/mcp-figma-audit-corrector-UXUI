@@ -1,97 +1,114 @@
 # mcp-figma-audit-corrector-UXUI
 
-Skills per Figma per l'analisi (audit) e la correzione di usabilità ed accessibilità su prototipi UI/UX. Compatibile con **Claude Code** e **Antigravity**.
+Skill per **Claude Code** che analizzano (audit) e correggono l'usabilità e l'accessibilità di prototipi UI/UX in Figma.
 
 ---
 
 ## Panoramica
 
-Un agente collegato a Figma tramite connettore MCP esegue due skill in sequenza rispettando il principio **Human-in-the-Loop**:
-1. **`agente-audit`**: analizza usabilità (10 Euristiche di Nielsen) e accessibilità (W3C WCAG 2.2) producendo un report Excel strutturato (`READ-ONLY`).
-2. **Revisione Umana**: il progettista compila il Registro delle Decisioni nel foglio Excel (`Accolta`, `Modificata`, ecc.).
-3. **`agente-correzione`**: interviene chirurgicamente sui soli nodi approvati su Figma e compila il foglio `Log Correzioni` (`WRITE-BOUNDED`).
+Claude, collegato a Figma tramite il connettore MCP ufficiale, esegue due skill in sequenza rispettando il principio **Human-in-the-Loop**:
+1. **`agente-audit`** (`/audit`): analizza usabilità (10 Euristiche di Nielsen) e accessibilità (W3C WCAG 2.2) e produce un report Excel strutturato. Sola lettura (`READ-ONLY`).
+2. **Revisione umana**: il progettista compila il Registro delle Decisioni nel foglio Excel (`Accolta`, `Modificata`, ecc.).
+3. **`agente-correzione`** (`/correzione`): interviene sui soli nodi approvati in Figma e compila il foglio `Log Correzioni` (`WRITE-BOUNDED`).
 
 ---
 
-## Architettura del Repository
+## Requisito obbligatorio: connettore Figma su Claude
+
+Le skill leggono e modificano Figma **solo** tramite il connettore Figma ufficiale collegato al tuo account Claude. Il repository non contiene una configurazione MCP propria: senza il connettore attivo le skill non possono funzionare.
+
+Come attivarlo (una volta per account):
+1. Apri [claude.ai](https://claude.ai) → **Impostazioni → Connettori** e aggiungi **Figma**.
+2. Accedi con il tuo account Figma e autorizza l'accesso ai file.
+3. Usa Claude Code con lo **stesso account** (app desktop, web o terminale): il connettore compare da solo tra gli strumenti della sessione.
+
+Per verificare che funzioni, chiedi a Claude in una sessione di questo progetto: *"Quali strumenti Figma hai disponibili?"*. Devono comparire almeno `create_session`, `get_metadata`, `get_design_context`, `get_variable_defs`, `get_screenshot` e `use_figma`.
+
+Chi clona il repository deve attivare il connettore sul **proprio** account Claude e avere accesso al file Figma da analizzare.
+
+---
+
+## Strumenti Figma consentiti
+
+Ogni skill usa un elenco chiuso di strumenti. L'hook `skills/common/lib/figma_guard.py` lo fa rispettare: blocca qualunque altro strumento Figma mentre il comando è attivo.
+
+| Strumento | `/audit` | `/correzione` | A cosa serve |
+|---|:-:|:-:|---|
+| `create_session` | ✅ | ✅ | Apre la sessione di lavoro sul file (obbligatorio, non modifica nulla) |
+| `get_metadata` | ✅ | ✅ | Struttura di pagine e frame, ID nodi, dimensioni |
+| `get_variable_defs` | ✅ | ✅ | Variabili e stili di colore e testo |
+| `get_design_context` | ✅ | ✅ | Dettaglio di un nodo: colori, testi, layout |
+| `get_screenshot` | ✅ | ✅ | Immagine del frame per il giudizio visivo |
+| `use_figma` | ❌ | ✅ | **Unico strumento che modifica il file**, solo sui nodi approvati |
+
+Fuori da `/audit` e `/correzione` l'hook non blocca nulla.
+
+---
+
+## Struttura del repository
 
 ```text
 mcp-figma-audit-corrector-UXUI/
-├── .antigravity/                   # Configurazione per Antigravity
-│   ├── mcp_config.json            # Template connettore MCP Figma
-│   └── rules.md                   # Regole di esecuzione workspace
-├── .agents/                        # Configurazione nativa Antigravity
-│   ├── rules/
-│   │   └── audit-corrector.md     # Regola di instradamento verso skills/
-│   └── skills.json                # Registrazione del percorso skills/ condiviso
-├── .claude/                        # Configurazione per Claude Code
+├── .claude/
 │   ├── commands/
-│   │   ├── audit.md               # Definizione slash command /audit
-│   │   ├── correttore.md          # Definizione slash command /correttore
-│   │   └── correzione.md          # Alias: slash command /correzione
-│   └── mcp.json                   # Configurazione connettore MCP Figma per Claude
+│   │   ├── audit.md               # Comando /audit
+│   │   └── correzione.md          # Comando /correzione
+│   └── settings.json              # Hook: figma_guard (PreToolUse) e token_log (Stop)
 ├── skills/
-│   ├── README.md                  # Panoramica della base comune delle skill
-│   ├── common/                    # Risorse e utility condivise (0 token AI)
+│   ├── README.md                  # Panoramica delle skill
+│   ├── common/
 │   │   ├── references/
-│   │   │   └── wcag.json          # Dataset unico W3C WCAG 2.2 + 10 Euristiche Nielsen
-│   │   └── lib/                   # Moduli Python condivisi
+│   │   │   └── wcag.json          # Dataset W3C WCAG 2.2 + 10 Euristiche di Nielsen
+│   │   └── lib/
 │   │       ├── color_utils.py     # Contrasto, luminanza, modulazione colore HLS
-│   │       ├── normative.py       # Parser e caricamento normativo da wcag.json
-│   │       └── excel_utils.py     # Gestione OpenPyXL e fallback OpenXML
+│   │       ├── normative.py       # Caricamento normativo da wcag.json
+│   │       ├── excel_utils.py     # Gestione OpenPyXL e fallback OpenXML
+│   │       ├── figma_guard.py     # Hook: limita gli strumenti Figma per skill
+│   │       └── token_log.py       # Hook: registra i token reali in logs/
 │   ├── agente-audit/
-│   │   ├── SKILL.md               # Definizione e regole per l'Agente di Audit
-│   │   └── scripts/
-│   │       └── checker.py         # Motore deterministico di calcolo e generazione report
+│   │   ├── SKILL.md               # Regole dell'Agente di Audit
+│   │   └── scripts/checker.py     # Calcoli deterministici e generazione del report
 │   └── agente-correzione/
-│       ├── SKILL.md               # Definizione e regole per l'Agente di Correzione
-│       └── scripts/
-│           └── corrector.py       # Motore deterministico di estrazione decisioni e log
+│       ├── SKILL.md               # Regole dell'Agente di Correzione
+│       └── scripts/corrector.py   # Estrazione decisioni approvate e Log Correzioni
+├── Audit_modello.xlsx             # Template del report Excel
 ├── CLAUDE.md                      # Linee guida operative per Claude Code
-├── requirements.txt               # Dipendenze Python consigliate
+├── requirements.txt               # Dipendenze Python
 ├── LICENSE
 └── README.md
 ```
 
+La cartella `logs/` (log dei token) e la cartella `.venv/` sono locali e non vengono versionate.
+
 ---
 
-## Moduli e Ruoli
+## Moduli e ruoli
 
 | Componente | Tipo | Ruolo |
 |---|---|---|
-| `skills/common/references/wcag.json` | Dati | Dataset normativo completo (86 criteri WCAG 2.2 + 10 Euristiche Nielsen). |
-| `skills/common/lib/` | Libreria | Calcoli matematici colore, caricamento normativo e gestione Excel riutilizzabili. |
-| `skills/agente-audit/SKILL.md` | Skill | Regole di analisi e diagnosi UI/UX (`READ-ONLY`). |
-| `skills/agente-audit/scripts/checker.py` | Script | Calcoli deterministici (contrasto, target size) e scrittura Excel a 0 token AI. |
-| `skills/agente-correzione/SKILL.md` | Skill | Regole di modifica mirata su Figma e prescrizioni di codice (`WRITE-BOUNDED`). |
-| `skills/agente-correzione/scripts/corrector.py` | Script | Estrazione righe approvate, calcolo correzioni colore/padding e compilazione log. |
+| `skills/common/references/wcag.json` | Dati | Dataset normativo (86 criteri WCAG 2.2 + 10 Euristiche di Nielsen) |
+| `skills/common/lib/` | Libreria | Calcoli colore, caricamento normativo, gestione Excel, hook |
+| `skills/agente-audit/SKILL.md` | Skill | Regole di analisi UI/UX (`READ-ONLY`) |
+| `skills/agente-audit/scripts/checker.py` | Script | Contrasto, target size e scrittura del report Excel, senza token AI |
+| `skills/agente-correzione/SKILL.md` | Skill | Regole di modifica mirata su Figma (`WRITE-BOUNDED`) |
+| `skills/agente-correzione/scripts/corrector.py` | Script | Righe approvate, calcolo correzioni colore/padding, Log Correzioni |
 
 ---
 
-## Modalità di Invocazione
+## Utilizzo
 
-### 1. Con Claude Code
-Nella sessione di Claude Code sono disponibili i comandi slash dedicati:
-* **Audit:**
-  ```text
-  /audit [link-progetto-figma]
-  ```
-* **Correzione:**
-  ```text
-  /correzione [link-progetto-figma] [percorso-report-audit.xlsx]
-  ```
-  (`/correttore` resta disponibile come alias.)
+In una sessione di Claude Code aperta in questa cartella (o nella cartella superiore che la contiene):
 
-### 2. Con Antigravity
-Grazie al puntatore `.agents/skills.json` e alla regola in `.agents/rules/audit-corrector.md`, Antigravity rileva direttamente la cartella comune `skills/`:
-* **Attivazione Audit:** chiedi all'agente di eseguire l'audit di usabilità e accessibilità fornendo il link Figma. L'agente attiverà `agente-audit` ed eseguirà `checker.py`.
-* **Attivazione Correzione:** fornisci all'agente il file Excel con le decisioni approvate. L'agente attiverà `agente-correzione` ed eseguirà `corrector.py`.
+```text
+/audit [link-file-figma]
+/correzione [link-file-figma] [percorso-report-audit.xlsx]
+```
+
+Il report viene salvato in una cartella con il nome del file Figma analizzato: `<nome file Figma>/<nome file Figma>-<data>-audit.xlsx`.
 
 ---
 
-## Requisiti e Installazione
-
-Gli script Python funzionano con le librerie standard native di Python (`colorsys`, `math`, `zipfile`, `xml.etree.ElementTree`). Per la massima precisione e velocità di calcolo, è consigliato installare le dipendenze:
+## Installazione
 
 ```bash
 python3 -m venv .venv
@@ -99,8 +116,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Test rapido di funzionamento:
+Gli script usano sempre l'interprete del progetto (`./.venv/bin/python`). Senza le dipendenze funzionano comunque con la sola libreria standard di Python, con un motore Excel di riserva.
+
+Test rapido:
+
 ```bash
 ./.venv/bin/python skills/agente-audit/scripts/checker.py --demo
 ./.venv/bin/python skills/agente-correzione/scripts/corrector.py --demo
 ```
+
+Gli hook in `.claude/settings.json` si attivano nelle sessioni di Claude Code aperte **dopo** la loro configurazione.

@@ -5,7 +5,7 @@ description: Esegue l'audit euristico (10 Euristiche di Nielsen) e normativo (W3
 
 # Skill: Agente di Audit UI/UX (Fase 1)
 
-Definizione canonica condivisa per **Claude Code** e **Antigravity**.
+Definizione canonica per **Claude Code**. Figma si raggiunge solo tramite il connettore Figma attivo sull'account Claude.
 
 ---
 
@@ -35,7 +35,7 @@ L'agente delega i calcoli e le definizioni ai moduli condivisi della cartella `s
 
 1. **Link Prototipo Figma (`link_figma`):**
    - URL Figma fornito dall'utente (es. `https://www.figma.com/design/<file-key>/<titolo>?node-id=...`).
-   - L'agente estrae via connettore MCP (`get_figma_data` o `get_file`) i nodi dei frame Desktop e Mobile.
+   - L'agente legge i nodi dei frame Desktop e Mobile con i soli strumenti MCP elencati nella sezione 4 ("Strumenti Figma consentiti").
 2. **Template Excel (`Audit_modello.xlsx`):**
    - Modello base contenente i fogli `Sessione`, `Voci`, `Corretto`, `Riepilogo`.
 3. **Payload Dati (formato JSON per lo script):**
@@ -77,6 +77,19 @@ L'agente delega i calcoli e le definizioni ai moduli condivisi della cartella `s
 ## 4. Elaborazione e Logica Operativa (`READ-ONLY`)
 
 - **Modalità Operativa:** `READ-ONLY`. Divieto categorico di modificare il file Figma.
+
+### Strumenti Figma consentiti (elenco chiuso)
+Si usano **solo** questi strumenti del server MCP di Figma, nell'ordine indicato. Qualunque altro strumento Figma è vietato, in particolare `use_figma` (esegue codice e può modificare il file) e tutti gli strumenti che creano o caricano contenuti.
+
+| Ordine | Strumento | Quando usarlo |
+|---|---|---|
+| 1 | `create_session` | Una volta, all'inizio, con il `fileKey` preso dal link. Non modifica il file ma è richiesto prima degli altri strumenti. |
+| 2 | `get_metadata` | Per avere la struttura delle pagine e dei frame (ID nodi, nomi, posizione e dimensioni). Costa poco: usalo per orientarti, scegliere i frame Desktop/Mobile e misurare i target (WCAG 2.5.5 / 2.5.8). |
+| 3 | `get_variable_defs` | Una volta per file: variabili e stili colore/testo. Serve a verificare la coerenza (Nielsen 4) e a capire se i colori usano i token. |
+| 4 | `get_design_context` | Solo sui nodi da approfondire (un frame o una sezione alla volta): colori, testi, font e layout per i calcoli di contrasto e dimensione testo. Non chiamarlo sull'intera pagina. |
+| 5 | `get_screenshot` | Solo quando serve un giudizio visivo (euristiche di Nielsen, gerarchia, leggibilità). È lo strumento che costa più token: al massimo uno per frame. |
+
+Questo elenco è applicato anche dall'hook `skills/common/lib/figma_guard.py`, che blocca ogni altro strumento Figma mentre `/audit` è attivo.
 - **Calcoli Deterministici a 0 Token:**
   - Contrasto cromatico testo (WCAG 1.4.3: $\ge 4.5:1$ per testo normale, $\ge 3.0:1$ per testo grande $\ge 18$pt o $\ge 14$pt bold).
   - Contrasto componenti grafici e stati interattivi (WCAG 1.4.11: $\ge 3.0:1$).
