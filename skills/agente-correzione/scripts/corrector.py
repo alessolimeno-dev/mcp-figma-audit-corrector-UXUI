@@ -8,20 +8,19 @@ Allineato a checker.py (Skill 1) con librerie ufficiali a 0 Token AI:
   * colorsys (Libreria nativa Python Standard Library per modulazione Lightness HLS a tonalità costante)
 - Dizionario normativo condiviso:
   * Legge da skills/common/references/wcag.json tramite common.lib.normative (86 criteri W3C WCAG 2.2 + 10 Euristiche di Nielsen)
-- Legge la nuova colonna P 'Suggerimento (Annotazioni in Figma)' e le colonne del progettista (R-W)
-- Compila il foglio 'Log Correzioni' e popola la Data della decisione nel foglio 'Voci'
+- Legge il foglio 'Voci' (decisioni del progettista, colonne R-W) e il foglio 'Nodi' (un nodo per riga):
+  una voce è un errore comune e può avere più nodi (componente, istanze, nodi singoli)
+- Regola "da correggere" (common/lib/nodi_utils.py): Decisione Accolta/Modificata E Chi applica Agente/Entrambi
+- Compila il foglio 'Log Correzioni' (una riga per ID errore) e popola la Data della decisione nel foglio 'Voci'
+Richiede openpyxl (nessun fallback).
 """
 
 import sys
 import os
-import re
-import io
 import json
-import zipfile
 import argparse
 import colorsys  # Libreria nativa Python (Standard Library) per conversioni RGB <-> HLS
 from datetime import datetime
-import xml.etree.ElementTree as ET
 from typing import Dict, List, Any, Tuple, Optional
 
 # ==============================================================================
@@ -38,8 +37,6 @@ try:
     from skills.common.lib.color_utils import (
         HAS_WCAG_CONTRAST_RATIO,
         HAS_COLORBREW,
-        _wcag_cr_lib,
-        _colorbrew_cls,
         hex_to_rgb,
         hex_to_rgb_unit,
         relative_luminance,
@@ -64,12 +61,16 @@ try:
         measure,
         parse_measures_from_text,
     )
+    from skills.common.lib.nodi_utils import (
+        TIPO_COMPONENTE,
+        TIPO_ISTANZA,
+        da_correggere,
+        normalize_nodi,
+    )
 except ImportError:
     from common.lib.color_utils import (  # type: ignore
         HAS_WCAG_CONTRAST_RATIO,
         HAS_COLORBREW,
-        _wcag_cr_lib,
-        _colorbrew_cls,
         hex_to_rgb,
         hex_to_rgb_unit,
         relative_luminance,
@@ -94,10 +95,37 @@ except ImportError:
         measure,
         parse_measures_from_text,
     )
-
-_load_shared_wcag_library = load_wcag_library
+    from common.lib.nodi_utils import (  # type: ignore
+        TIPO_COMPONENTE,
+        TIPO_ISTANZA,
+        da_correggere,
+        normalize_nodi,
+    )
 
 MEASURABLE_REFS = ("1.4.3", "1.4.6", "1.4.11", "2.5.5", "2.5.8")
+
+# Colonne del foglio 'Voci' (layout a 23 colonne generato da checker.py)
+COL_ID, COL_PAGINA, COL_ELEMENTO, COL_NODI, COL_AMBITO, COL_RIF, COL_DESC = 1, 2, 3, 4, 5, 6, 7
+COL_GRAVITA, COL_CONFLITTO, COL_CORREZIONE, COL_DOVE, COL_SUGG = 8, 12, 14, 15, 16
+COL_DECISIONE, COL_MOTIVO_DEC, COL_CHI_APPLICA, COL_DATA_DEC = 18, 19, 22, 23
+
+# Cosa è successo a un nodo durante la correzione (campo "azione" nel file --misure-post)
+AZIONI_NODO = {
+    "applicato": "corretto",
+    "ereditato": "ereditato dal componente (nessuna scrittura)",
+    "override": "istanza con override corretta direttamente",
+    "libreria": "istanza corretta come override (componente in libreria esterna)",
+    "non_trovato": "non trovato o non modificabile",
+}
+_RANK_ESITO = {"Risolto": 0, "Annotato": 1, "Da verificare": 2, "Non risolto": 3}
+
+
+def _require_openpyxl() -> None:
+    if not HAS_OPENPYXL:
+        raise SystemExit(
+            "[corrector] ERRORE: openpyxl non è installato. Usa l'ambiente locale del progetto "
+            "(<ROOT>/.venv/bin/python) oppure installa le dipendenze: pip install -r requirements.txt"
+        )
 
 
 def _is_measurable(ref: str) -> bool:
@@ -121,21 +149,31 @@ def build_correction_plan(
 ) -> List[Dict[str, Any]]:
     """
     Per ogni voce approvata calcola i valori da applicare su Figma (colore HLS a tonalità costante,
-    padding per i target). Le misure "prima" vengono da `measures_before` (--misure-prima, lette da Figma)
-    oppure dalla colonna Descrizione del report (scritta da checker.py). Se mancano, la voce risulta
-    `misure_mancanti`: vanno lette da Figma con get_design_context e passate a --misure-prima.
+    padding per i target). La voce raggruppa nodi con le STESSE misure, quindi i valori sono uno solo per
+    voce e valgono per tutti i suoi nodi. Le misure "prima" vengono da `measures_before` (--misure-prima,
+    lette da Figma) oppure dalla colonna Descrizione del report (scritta da checker.py). Se mancano, la voce
+    risulta `misure_mancanti`: vanno lette da Figma con get_design_context e passate a --misure-prima.
+    I nodi sono già in ordine di applicazione: componente -> istanze -> nodi singoli.
     """
     plan = []
     for item in items:
         vid, ref = item["id"], item.get("riferimento", "")
+        nodi = item.get("nodi", [])
         entry: Dict[str, Any] = {
-            "id": vid, "nodo_id": item.get("nodo_id", ""), "riferimento": ref,
-            "elemento": item.get("elemento", ""),
+            "id": vid, "riferimento": ref, "elemento": item.get("elemento", ""),
+            "nodi": nodi,
         }
+        if any(n["tipo"] == TIPO_COMPONENTE for n in nodi):
+            # le istanze del componente devono ereditare la correzione: vanno rilette dopo la modifica
+            entry["istanze_da_rileggere"] = [n["id"] for n in nodi if n["tipo"] == TIPO_ISTANZA]
         if not _is_measurable(ref):
-            entry.update(kind="annotazione_o_altro", stato="non_misurabile",
-                         nota="Nessun valore da calcolare: intervento/annotazione descritti in 'correzione_proposta'.",
-                         correzione_proposta=item.get("correzione_proposta", ""))
+            entry.update(
+                kind="annotazione_o_altro", stato="non_misurabile",
+                nota="Nessun valore da calcolare. Inserire l'annotazione su OGNI nodo dell'elenco con il testo guida "
+                     "della colonna P, senza compilare i segnaposto tra parentesi quadre.",
+                correzione_proposta=item.get("correzione_proposta", ""),
+                annotazione=item.get("suggerimento_annotazione", ""),
+            )
             plan.append(entry)
             continue
 
@@ -155,43 +193,124 @@ def build_correction_plan(
 
 
 def format_plan(plan: List[Dict[str, Any]]) -> str:
-    """Rende il piano leggibile in chat (una riga per voce)."""
+    """Rende il piano leggibile in chat (un blocco per voce, con i nodi in ordine di applicazione)."""
     lines = []
     for p in plan:
-        head = f"{p['id']} [{p['riferimento']}] nodo {p['nodo_id'] or '?'} - {p['elemento']}"
+        nodi = ", ".join(f"{n['id']} ({n['tipo']})" for n in p["nodi"])
+        head = f"{p['id']} [{p['riferimento']}] - {p['elemento']}\n    Nodi (ordine di applicazione): {nodi}"
+        if p.get("istanze_da_rileggere"):
+            head += f"\n    Dopo la modifica del componente rileggere le istanze: {', '.join(p['istanze_da_rileggere'])}"
         if p["stato"] == "da_correggere" and p["kind"] == "contrasto":
             lines.append(f"{head}\n    {p['testo']}\n    -> nuovo colore {p['suggerito_fg']} ({p['suggerito_ratio']}:1) "
                          f"HLS {p['hls_prima']} -> {p['hls_dopo']} | Figma rgb {p['figma_rgb_suggerito']}")
         elif p["stato"] == "da_correggere" and p["kind"] == "target":
             lines.append(f"{head}\n    {p['testo']}\n    -> +{p['padding_orizzontale_per_lato']:g}px H / +{p['padding_verticale_per_lato']:g}px V per lato "
                          f"=> {p['dimensione_finale'][0]:g}x{p['dimensione_finale'][1]:g} px")
+        elif p["stato"] == "non_misurabile":
+            lines.append(f"{head}\n    {p['stato']}: {p.get('nota', '')}\n    Annotazione (testo guida, non compilare): {p.get('annotazione') or '-'}")
         else:
             lines.append(f"{head}\n    {p['stato']}: {p.get('nota') or p.get('testo', '')}")
     return "\n".join(lines)
 
 
 # ==============================================================================
-# LETTURA DECISIONI PROGETTISTA E GENERAZIONE PRESCRIZIONE / LOG DA WCAG.JSON
+# ESITO PER NODO E PER VOCE
 # ==============================================================================
+
+def _post_for_node(post_voce: Optional[Dict[str, Any]], node_id: str) -> Dict[str, Any]:
+    """
+    Dati post-intervento di un nodo. `post_voce` può essere:
+      - {fg,bg | w,h [, azione, nota]}  -> vale per tutti i nodi della voce;
+      - {<id nodo>: {fg,bg | w,h [, azione, nota]}, ...} -> uno per nodo.
+    """
+    if not post_voce:
+        return {}
+    if any(k in post_voce for k in ("fg", "bg", "w", "h", "azione", "nota")):
+        return dict(post_voce)
+    return dict(post_voce.get(node_id) or {})
+
+
+def _node_outcome(
+    item: Dict[str, Any],
+    node: Dict[str, str],
+    post_node: Dict[str, Any],
+    before: Dict[str, Any],
+    ha_annotazione: bool,
+) -> Tuple[str, str, Optional[str], Optional[Dict[str, Any]]]:
+    """Restituisce (azione nodo, esito nodo, riga di verifica o None, misura post o None)."""
+    ref = item.get("riferimento", "")
+    azione = post_node.get("azione") or "applicato"
+    if azione not in AZIONI_NODO:
+        print(f"[corrector] AVVISO {item['id']} nodo {node['id']}: azione '{azione}' sconosciuta "
+              f"(ammesse: {', '.join(AZIONI_NODO)}); usata 'applicato'.", file=sys.stderr)
+        azione = "applicato"
+    nota = f" [{post_node['nota']}]" if post_node.get("nota") else ""
+    label = f"{node['id']} ({node['tipo']})"
+
+    if azione == "non_trovato":
+        return azione, "Non risolto", f"{label}: nodo non trovato o non modificabile{nota}.", None
+
+    if _is_measurable(ref):
+        misure = {k: v for k, v in post_node.items() if k in ("fg", "bg", "w", "h", "min")}
+        res = None
+        if misure:
+            merged = dict(before)  # eredita testo_grande / componente_ui dalla misura "prima"
+            merged.update(misure)
+            res = measure(ref, merged)
+        if res:
+            esito = "Risolto" if res["compliant"] else "Non risolto"
+            testo = res["testo"].replace("Misurato:", "Misurato dopo l'intervento:", 1)
+            return azione, esito, f"{label}: {testo}{nota}", res
+        return azione, "Da verificare", f"{label}: non misurato (nessuna misura post-intervento fornita){nota}.", None
+
+    # criteri non misurabili da script (annotazioni, Auto Layout/reflow, semantica...)
+    return azione, ("Annotato" if ha_annotazione else "Da verificare"), (f"{label}: {nota.strip(' []')}" if nota else None), None
+
+
+def _riepilogo_azioni(nodi: List[Dict[str, str]], azioni: Dict[str, str], annotando: bool = False) -> str:
+    """Riepilogo deterministico, es. 'componente corretto x1; istanza ereditata dal componente x3'.
+    Con `annotando` (criteri non misurabili con annotazione) 'corretto/a' diventa 'annotato/a'."""
+    etichette = {
+        (TIPO_COMPONENTE, "applicato"): "componente corretto",
+        (TIPO_ISTANZA, "applicato"): "istanza corretta",
+        (TIPO_ISTANZA, "ereditato"): "istanza ereditata dal componente (nessuna scrittura)",
+        (TIPO_ISTANZA, "override"): "istanza con override corretta direttamente",
+        (TIPO_ISTANZA, "libreria"): "istanza corretta come override (componente in libreria esterna)",
+    }
+    conteggi: Dict[str, int] = {}
+    for n in nodi:
+        az = azioni.get(n["id"], "applicato")
+        if az == "non_trovato":
+            lab = "nodo non trovato o non modificabile"
+        else:
+            lab = etichette.get((n["tipo"], az)) or ("nodo singolo corretto" if n["tipo"] not in (TIPO_COMPONENTE, TIPO_ISTANZA)
+                                                     else f"{n['tipo'].lower()} {AZIONI_NODO.get(az, az)}")
+        if annotando:
+            lab = lab.replace("corretto", "annotato").replace("corretta", "annotata")
+        conteggi[lab] = conteggi.get(lab, 0) + 1
+    return "; ".join(f"{lab} x{n}" for lab, n in conteggi.items())
+
 
 def _build_resolution_details(
     item: Dict[str, Any],
-    post_measure: Optional[Dict[str, Any]] = None,
+    post_voce: Optional[Dict[str, Any]] = None,
     before_measure: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, str, str, str]:
     """
-    Restituisce (azione, annotazione, esito, verifica).
+    Restituisce (azione, annotazione, esito, verifica) per UNA voce, aggregando i suoi nodi.
 
-    La verifica NON è un testo generato: per i criteri misurabili (contrasto 1.4.3/1.4.6/1.4.11,
-    target 2.5.5/2.5.8) è la misura post-intervento calcolata da wcag_checks.measure() sui valori
-    riletti da Figma (`post_measure`). Senza misura l'esito è "Da verificare", mai "Risolto".
-    Esiti: Risolto (misurato conforme) | Non risolto (misurato non conforme) | Annotato (solo
-    annotazione per sviluppatori) | Da verificare (nessuna misura / non misurabile da script).
+    - Annotazione: è SEMPRE il testo guida della colonna P così com'è (con i segnaposto tra parentesi
+      quadre non compilati). Non si inventa e non si compila codice.
+    - Contrasto e target: la verifica è la misura post-intervento di ciascun nodo, calcolata da
+      wcag_checks.measure() sui valori riletti da Figma. Senza misura l'esito del nodo è "Da verificare".
+    - Esito della voce = il caso peggiore tra i nodi (Non risolto > Da verificare > Annotato > Risolto).
+    - Verifica: una riga per nodo con la sua misura.
     """
     ref = item.get("riferimento", "")
     proposta = item.get("correzione_proposta", "")
     sugg_col_p = item.get("suggerimento_annotazione", "")
     std = lookup_normative_entry(ref)
+    nodi = item.get("nodi", [])
 
     nome_std = std.get("nome", ref)
     techs = ", ".join(std.get("techniques", []))
@@ -199,202 +318,127 @@ def _build_resolution_details(
     annotazione = sugg_col_p if (sugg_col_p and sugg_col_p != "-") else std.get("annotazione_figma", "-")
     ha_annotazione = bool(annotazione) and annotazione not in ["-", "Annotazione già presente in Figma"]
 
+    before = {}
     if _is_measurable(ref):
         before = before_measure or parse_measures_from_text(item.get("descrizione", ""), ref) or {}
-        res = None
-        if post_measure:
-            merged = dict(before)  # eredita testo_grande / componente_ui dalla misura "prima"
-            merged.update(post_measure)
-            res = measure(ref, merged)
-        if res:
-            if res["kind"] == "contrasto":
-                prima = before.get("fg")
-                azione = proposta or "Colore aggiornato su Figma."
-                if prima and prima.upper() != res["fg"]:
-                    azione = f"Colore aggiornato da {prima.upper()} a {res['fg']} (tonalità costante, modulazione Lightness HLS)."
-            else:
-                azione = proposta or "Dimensioni del target aggiornate su Figma."
-                if before.get("w") is not None:
-                    azione = f"Target portato da {before['w']:g}x{before['h']:g} a {res['w']:g}x{res['h']:g} px."
-            esito = "Risolto" if res["compliant"] else "Non risolto"
-            verifica = res["testo"].replace("Misurato:", "Misurato dopo l'intervento:", 1) + f" - {ref} - {nome_std}{tech_str}."
-            return azione, annotazione, esito, verifica
-        return (
-            proposta or f"Intervento su {item.get('elemento', 'componente')} secondo {ref}.",
-            annotazione,
-            "Da verificare",
-            f"Non misurata: nessuna misura post-intervento fornita (--misure-post) per {ref}.",
-        )
 
-    # Criteri non misurabili da script (annotazioni, Auto Layout/reflow, semantica...)
+    esiti, righe, azioni = [], [], {}
+    prima_misura = None
+    for n in nodi:
+        az, esito_n, riga, res = _node_outcome(item, n, _post_for_node(post_voce, n["id"]), before, ha_annotazione)
+        azioni[n["id"]] = az
+        esiti.append(esito_n)
+        if riga:
+            righe.append(riga)
+        if res and prima_misura is None:
+            prima_misura = res
+    esito = max(esiti, key=lambda e: _RANK_ESITO[e]) if esiti else "Da verificare"
+    riepilogo = _riepilogo_azioni(nodi, azioni, annotando=(not _is_measurable(ref) and ha_annotazione))
+
+    if _is_measurable(ref):
+        if prima_misura and prima_misura["kind"] == "contrasto":
+            prima = before.get("fg")
+            azione = proposta or "Colore aggiornato su Figma."
+            if prima and prima.upper() != prima_misura["fg"]:
+                azione = f"Colore aggiornato da {prima.upper()} a {prima_misura['fg']} (tonalità costante, modulazione Lightness HLS)."
+        elif prima_misura:
+            azione = proposta or "Dimensioni del target aggiornate su Figma."
+            if before.get("w") is not None:
+                azione = f"Target portato da {before['w']:g}x{before['h']:g} a {prima_misura['w']:g}x{prima_misura['h']:g} px."
+        else:
+            azione = proposta or f"Intervento su {item.get('elemento', 'componente')} secondo {ref}."
+        righe.append(f"{ref} - {nome_std}{tech_str}.")
+        return f"{azione} | Nodi: {riepilogo}", annotazione, esito, "\n".join(righe)
+
     azione = proposta or f"Applicato intervento correttivo su {item.get('elemento', 'componente')} secondo {ref} ({nome_std})."
     if ha_annotazione:
-        return azione, annotazione, "Annotato", (
-            f"Non misurabile da script: annotazione inserita secondo {ref} - {nome_std}{tech_str}. "
-            "Controllo a cura del progettista."
-        )
-    return azione, annotazione, "Da verificare", (
-        f"Non misurabile da script ({ref}): controllo visivo (screenshot) o revisione del progettista."
-    )
+        verifica = (f"Non misurabile da script: annotazione (testo guida, non compilato) inserita su {len(nodi)} {'nodo' if len(nodi) == 1 else 'nodi'} secondo "
+                    f"{ref} - {nome_std}{tech_str}. Controllo a cura del progettista.")
+    else:
+        verifica = f"Non misurabile da script ({ref}): controllo visivo (screenshot) o revisione del progettista."
+    return f"{azione} | Nodi: {riepilogo}", annotazione, esito, "\n".join([verifica] + righe)
+
+
+# ==============================================================================
+# LETTURA DECISIONI PROGETTISTA (fogli Voci e Nodi)
+# ==============================================================================
+
+def _read_nodi_sheet(wb) -> Dict[str, List[Dict[str, str]]]:
+    """Legge il foglio 'Nodi' (una riga per coppia nodo-errore) raggruppando i nodi per ID errore."""
+    if "Nodi" not in wb.sheetnames:
+        raise ValueError("Foglio 'Nodi' non trovato nel report Excel. Rigenera il report con /audit (versione attuale).")
+    ws = wb["Nodi"]
+    per_voce: Dict[str, List[Dict[str, str]]] = {}
+    for r in range(2, ws.max_row + 1):
+        nid = str(ws.cell(r, 1).value or "").strip()
+        vid = str(ws.cell(r, 5).value or "").strip()
+        if not nid or not vid:
+            continue
+        per_voce.setdefault(vid, []).append({
+            "id": nid,
+            "pagina": str(ws.cell(r, 2).value or "").strip(),
+            "tipo": str(ws.cell(r, 3).value or "").strip(),
+            "elemento": str(ws.cell(r, 4).value or "").strip(),
+        })
+    # ordine fisso componente -> istanze -> nodi singoli, doppioni eliminati
+    return {vid: normalize_nodi(nodi) for vid, nodi in per_voce.items()}
 
 
 def extract_approved_corrections(excel_path: str) -> List[Dict[str, Any]]:
     """
-    Legge il file Excel in locale ed estrae solo le righe approvate ('Accolta', 'Modificata', 'correggere')
-    assegnate all'Agente. Rileva automaticamente il layout a 23 colonne (con Colonna P 'Suggerimento Annotazioni')
-    o i layout precedenti a 21/22 colonne.
+    Legge il report Excel ed estrae le voci da correggere: Decisione (col. R) Accolta/Modificata E Chi applica
+    la correzione (col. V) Agente/Entrambi (regola unica `da_correggere`, uguale alla formula del foglio Nodi).
+    Una colonna V vuota NON è approvata. Ogni voce porta TUTTI i suoi nodi, già in ordine di applicazione.
+    I nodi si leggono dal foglio 'Nodi' (obbligatorio, nessuna riserva sulla colonna D di 'Voci').
     """
-    if not HAS_OPENPYXL:
-        return _extract_approved_corrections_xml(excel_path)
-
+    _require_openpyxl()
     wb = openpyxl.load_workbook(excel_path, data_only=True)
-    if 'Voci' not in wb.sheetnames:
+    if "Voci" not in wb.sheetnames:
         raise ValueError("Foglio 'Voci' non trovato nel report Excel.")
+    ws = wb["Voci"]
+    if "suggerimento" not in str(ws.cell(1, COL_SUGG).value or "").lower():
+        raise ValueError(
+            "Layout del foglio 'Voci' non riconosciuto (atteso: 23 colonne, colonna P = Suggerimento). "
+            "Rigenera il report con /audit."
+        )
 
-    ws = wb['Voci']
+    nodi_per_voce = _read_nodi_sheet(wb)
     approved = []
-
-    col15_h = str(ws.cell(1, 15).value or '').strip().lower()
-    col16_h = str(ws.cell(1, 16).value or '').strip().lower()
-
-    if "suggerimento" in col16_h or "annotazion" in col16_h:
-        # Nuovo layout a 23 colonne (Colonna P = Suggerimento Annotazioni in Figma)
-        has_sugg_col = True
-        col_decisione = 18
-        col_motivo_dec = 19
-        col_chi_applica = 22
-        col_data_dec = 23
-    elif "dove" in col15_h or "figma" in col15_h:
-        # Layout intermedio a 22 colonne
-        has_sugg_col = False
-        col_decisione = 17
-        col_motivo_dec = 18
-        col_chi_applica = 21
-        col_data_dec = 22
-    else:
-        # Layout legacy a 21 colonne
-        has_sugg_col = False
-        col_decisione = 16
-        col_motivo_dec = 17
-        col_chi_applica = 20
-        col_data_dec = 21
-
     for r in range(2, ws.max_row + 1):
-        item_id = ws.cell(r, 1).value
+        item_id = ws.cell(r, COL_ID).value
         if not item_id:
             continue
-
-        decisione = str(ws.cell(r, col_decisione).value or '').strip()
-        chi_applica = str(ws.cell(r, col_chi_applica).value or '').strip().lower()
-        dove_si_corregge = str(ws.cell(r, 15).value or '').strip()
-        sugg_annotazione = str(ws.cell(r, 16).value or '-').strip() if has_sugg_col else "-"
-
-        if decisione.lower() in ["accolta", "modificata", "correggere", "corretto", "sì", "si"]:
-            if "progettista" not in chi_applica:
-                approved.append({
-                    "id": str(item_id).strip(),
-                    "row": r,
-                    "pagina": str(ws.cell(r, 2).value or '').strip(),
-                    "elemento": str(ws.cell(r, 3).value or '').strip(),
-                    "nodo_id": str(ws.cell(r, 4).value or '').strip(),
-                    "ambito": str(ws.cell(r, 5).value or '').strip(),
-                    "riferimento": str(ws.cell(r, 6).value or '').strip(),
-                    "descrizione": str(ws.cell(r, 7).value or '').strip(),
-                    "gravita": str(ws.cell(r, 8).value or '').strip(),
-                    "conflitto_brand": str(ws.cell(r, 12).value or 'No').strip(),
-                    "correzione_proposta": str(ws.cell(r, 14).value or '').strip(),
-                    "dove_si_corregge": dove_si_corregge,
-                    "suggerimento_annotazione": sugg_annotazione,
-                    "decisione": decisione,
-                    "motivo_decisione": str(ws.cell(r, col_motivo_dec).value or '').strip(),
-                    "col_data_dec": col_data_dec,
-                })
-
+        if not da_correggere(ws.cell(r, COL_DECISIONE).value, ws.cell(r, COL_CHI_APPLICA).value):
+            continue
+        vid = str(item_id).strip()
+        nodi = nodi_per_voce.get(vid)
+        if not nodi:
+            print(f"[corrector] AVVISO {vid}: da correggere ma senza righe nel foglio Nodi: saltata.", file=sys.stderr)
+            continue
+        approved.append({
+            "id": vid,
+            "row": r,
+            "pagina": str(ws.cell(r, COL_PAGINA).value or "").strip(),
+            "elemento": str(ws.cell(r, COL_ELEMENTO).value or "").strip(),
+            "nodi": nodi,
+            "ambito": str(ws.cell(r, COL_AMBITO).value or "").strip(),
+            "riferimento": str(ws.cell(r, COL_RIF).value or "").strip(),
+            "descrizione": str(ws.cell(r, COL_DESC).value or "").strip(),
+            "gravita": str(ws.cell(r, COL_GRAVITA).value or "").strip(),
+            "conflitto_brand": str(ws.cell(r, COL_CONFLITTO).value or "No").strip(),
+            "correzione_proposta": str(ws.cell(r, COL_CORREZIONE).value or "").strip(),
+            "dove_si_corregge": str(ws.cell(r, COL_DOVE).value or "").strip(),
+            "suggerimento_annotazione": str(ws.cell(r, COL_SUGG).value or "-").strip(),
+            "decisione": str(ws.cell(r, COL_DECISIONE).value or "").strip(),
+            "motivo_decisione": str(ws.cell(r, COL_MOTIVO_DEC).value or "").strip(),
+            "col_data_dec": COL_DATA_DEC,
+        })
     return approved
 
 
-def _extract_approved_corrections_xml(excel_path: str) -> List[Dict[str, Any]]:
-    """Estrazione compatibile con libreria standard Python (senza openpyxl)."""
-    ns = {"ns": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-    approved = []
-    with zipfile.ZipFile(excel_path, "r") as z:
-        shared = []
-        if "xl/sharedStrings.xml" in z.namelist():
-            ss_root = ET.fromstring(z.read("xl/sharedStrings.xml"))
-            for si in ss_root.findall("ns:si", ns):
-                shared.append("".join(t.text or "" for t in si.findall(".//ns:t", ns)))
-
-        wb_root = ET.fromstring(z.read("xl/workbook.xml"))
-        rels_root = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
-        rel_map = {r.attrib["Id"]: "xl/" + r.attrib["Target"].lstrip("/") for r in rels_root}
-        voci_target = None
-        for s in wb_root.findall(".//ns:sheet", ns):
-            if s.attrib.get("name") == "Voci":
-                r_id = s.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
-                voci_target = rel_map.get(r_id or "")
-                break
-        if not voci_target or voci_target not in z.namelist():
-            return []
-
-        root = ET.fromstring(z.read(voci_target))
-
-        def read_row_dict(row_el: ET.Element) -> Dict[str, str]:
-            out = {}
-            for c in row_el.findall("ns:c", ns):
-                coord = c.attrib.get("r", "")
-                col_let = re.sub(r"\d+", "", coord)
-                t = c.attrib.get("t", "")
-                v = c.find("ns:v", ns)
-                is_t = c.find("ns:is/ns:t", ns)
-                val = ""
-                if t == "s" and v is not None and v.text is not None:
-                    val = shared[int(v.text)]
-                elif is_t is not None and is_t.text is not None:
-                    val = is_t.text
-                elif v is not None and v.text is not None:
-                    val = v.text
-                out[col_let] = val.strip()
-            return out
-
-        rows = root.findall(".//ns:row", ns)
-        if not rows:
-            return []
-        header_vals = read_row_dict(rows[0])
-        has_sugg = "suggerimento" in header_vals.get("P", "").lower() or "annotazion" in header_vals.get("P", "").lower()
-        col_dec = "R" if has_sugg else "Q"
-        col_mot = "S" if has_sugg else "R"
-        col_chi = "V" if has_sugg else "U"
-        col_dat_idx = 23 if has_sugg else 22
-
-        for row_el in rows[1:]:
-            rn = int(row_el.attrib.get("r", "0"))
-            vals = read_row_dict(row_el)
-            item_id = vals.get("A", "")
-            if not item_id:
-                continue
-            dec = vals.get(col_dec, "")
-            chi = vals.get(col_chi, "").lower()
-            if dec.lower() in ["accolta", "modificata", "correggere", "corretto", "sì", "si"] and "progettista" not in chi:
-                approved.append({
-                    "id": item_id,
-                    "row": rn,
-                    "pagina": vals.get("B", ""),
-                    "elemento": vals.get("C", ""),
-                    "nodo_id": vals.get("D", ""),
-                    "ambito": vals.get("E", ""),
-                    "riferimento": vals.get("F", ""),
-                    "descrizione": vals.get("G", ""),
-                    "gravita": vals.get("H", ""),
-                    "conflitto_brand": vals.get("L", "No"),
-                    "correzione_proposta": vals.get("N", ""),
-                    "dove_si_corregge": vals.get("O", ""),
-                    "suggerimento_annotazione": vals.get("P", "-") if has_sugg else "-",
-                    "decisione": dec,
-                    "motivo_decisione": vals.get(col_mot, ""),
-                    "col_data_dec": col_dat_idx,
-                })
-    return approved
-
+# ==============================================================================
+# LOG CORREZIONI (una riga per ID errore)
+# ==============================================================================
 
 def apply_corrections_and_log(
     excel_path: str,
@@ -404,18 +448,17 @@ def apply_corrections_and_log(
     before_measures: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> str:
     """
-    Legge le voci approvate da Excel e compila la scheda 'Log Correzioni' e la Data della decisione.
+    Legge le voci approvate da Excel e compila la scheda 'Log Correzioni' (UNA RIGA PER ID ERRORE, così il
+    progettista confronta la correzione proposta con quella applicata) e la Data della decisione.
 
-    NON modifica Figma e NON decide i valori: la modifica la fa Claude con use_figma (valori da
-    --plan). Qui si registra l'esito: per contrasto e target la verifica è la misura calcolata sulle
-    `post_measures` (valori riletti da Figma dopo la modifica); senza misura l'esito è "Da verificare".
+    NON modifica Figma e NON decide i valori: la modifica la fa Claude con use_figma (valori da --plan).
+    Qui si registra l'esito: per contrasto e target la verifica è la misura calcolata sui valori riletti da
+    Figma, un nodo alla volta (`post_measures`); senza misura l'esito è "Da verificare".
     """
+    _require_openpyxl()
     approved_items = extract_approved_corrections(excel_path)
     post_measures = post_measures or {}
     before_measures = before_measures or {}
-
-    if not HAS_OPENPYXL:
-        raise RuntimeError("openpyxl non disponibile: usa l'interprete del progetto (<ROOT>/.venv/bin/python).")
 
     wb = openpyxl.load_workbook(excel_path)
     ws_voci = wb["Voci"]
@@ -432,12 +475,13 @@ def apply_corrections_and_log(
         ws_log = wb.create_sheet("Log Correzioni")
 
     headers = [
-        "ID Voce", "ID Nodo Figma", "Ambito", "Riferimento",
+        "ID Voce", "ID Nodi Figma", "Ambito", "Riferimento",
         "Elemento", "Azione Eseguita", "Annotazione / Codice Applicato", "Esito", "Verifica Post-Intervento"
     ]
     ws_log.append(headers)
 
     today_str = datetime.now().strftime("%Y-%m-%d")
+    wrap = openpyxl.styles.Alignment(wrap_text=True, vertical="top")
 
     for item in approved_items:
         item_id = item["id"]
@@ -445,11 +489,13 @@ def apply_corrections_and_log(
         elem = item.get("elemento", "")
         ovr = (log_overrides or {}).get(item_id, {})
 
-        def_azione, def_ann, def_esito, def_verifica = _build_resolution_details(
+        def_azione, annotazione, def_esito, def_verifica = _build_resolution_details(
             item, post_measures.get(item_id), before_measures.get(item_id)
         )
+        if "annotazione" in ovr:
+            print(f"[corrector] AVVISO {item_id}: override di 'annotazione' ignorato: si riporta il suggerimento della "
+                  "colonna P così com'è (testo guida, mai codice compilato).", file=sys.stderr)
         azione = ovr.get("azione", def_azione)
-        annotazione = ovr.get("annotazione", def_ann)
         if _is_measurable(ref):
             # Per i criteri misurabili esito e verifica li decide la misura, non un testo scritto a mano.
             if "esito" in ovr or "verifica" in ovr:
@@ -464,7 +510,7 @@ def apply_corrections_and_log(
 
         ws_log.append([
             item_id,
-            item["nodo_id"],
+            "\n".join(n["id"] for n in item["nodi"]),
             item["ambito"],
             ref,
             elem,
@@ -473,7 +519,9 @@ def apply_corrections_and_log(
             esito,
             verifica
         ])
-        col_data = item.get("col_data_dec", 23)
+        for c in ws_log[ws_log.max_row]:
+            c.alignment = wrap
+        col_data = item.get("col_data_dec", COL_DATA_DEC)
         if not ws_voci.cell(item["row"], col_data).value:
             ws_voci.cell(item["row"], col_data, today_str)
 
@@ -486,15 +534,16 @@ def main():
     parser = argparse.ArgumentParser(
         description="corrector.py — Piano di correzione calcolato (--plan) e Log Correzioni con verifica misurata (--apply)"
     )
-    parser.add_argument("--demo", action="store_true", help="Solo test delle formule (colore HLS, padding). NON legge l'Excel")
+    parser.add_argument("--demo", action="store_true", help="Solo test delle formule (colore HLS, padding, regola Da correggere). NON legge l'Excel")
     parser.add_argument("--excel", help="Percorso del report Excel di audit contenente le decisioni")
     parser.add_argument("--plan", action="store_true",
-                        help="Dry-run: legge l'Excel, elenca le voci approvate e calcola i valori da applicare su Figma. Non scrive nulla")
-    parser.add_argument("--plan-out", help="Con --plan: salva anche il piano in JSON (valori colore/padding per voce)")
-    parser.add_argument("--misure-prima", help="JSON {ID: {fg,bg | w,h}} con le misure lette da Figma PRIMA della modifica")
-    parser.add_argument("--apply", action="store_true", help="Scrive il foglio Log Correzioni (verifica = misure post-intervento)")
-    parser.add_argument("--misure-post", help="JSON {ID: {fg,bg | w,h}} con le misure rilette da Figma DOPO la modifica")
-    parser.add_argument("--log-json", help="Percorso file JSON opzionale con note e override (azione, annotazione) delle correzioni")
+                        help="Dry-run: legge l'Excel, elenca le voci approvate con i loro nodi e calcola i valori da applicare su Figma. Non scrive nulla")
+    parser.add_argument("--plan-out", help="Con --plan: salva anche il piano in JSON (valori colore/padding e nodi per voce)")
+    parser.add_argument("--misure-prima", help="JSON {ID voce: {fg,bg | w,h}} con le misure lette da Figma PRIMA della modifica")
+    parser.add_argument("--apply", action="store_true", help="Scrive il foglio Log Correzioni (verifica = misure post-intervento per nodo)")
+    parser.add_argument("--misure-post", help="JSON {ID voce: {fg,bg | w,h}} oppure {ID voce: {ID nodo: {fg,bg | w,h, azione, nota}}} "
+                                              "con le misure rilette da Figma DOPO la modifica")
+    parser.add_argument("--log-json", help="Percorso file JSON opzionale con override per voce (solo 'azione'; 'esito'/'verifica' solo per criteri non misurabili)")
     parser.add_argument("--out", help="Percorso opzionale per il file Excel salvato (default: sovrascrive --excel)")
 
     args = parser.parse_args()
@@ -510,15 +559,19 @@ def main():
         print(f"Colore corretto a tonalità costante: {new_fg} su {bg} -> Contrasto: {contrast_ratio(new_fg, bg)}:1")
         pad = calculate_padding_expansion(18, 18, 24)
         print(f"Padding per target 18x18 px -> +{pad['padding_horizontal_add']}px H, +{pad['padding_vertical_add']}px V")
+        print("Regola 'Da correggere' (Decisione, Chi applica): "
+              f"(Accolta, Agente)={da_correggere('Accolta', 'Agente')} | (Accolta, Progettista)={da_correggere('Accolta', 'Progettista')} | "
+              f"(Rifiutata, Entrambi)={da_correggere('Rifiutata', 'Entrambi')} | (Accolta, vuoto)={da_correggere('Accolta', None)}")
         sys.exit(0)
 
     if args.excel and args.plan:
         items = extract_approved_corrections(args.excel)
         if not items:
-            print("Nessuna voce approvata per l'Agente (Decisione Accolta/Modificata e Chi applica = Agente/Entrambi).")
+            print("Nessuna voce da correggere (serve Decisione Accolta/Modificata E Chi applica = Agente/Entrambi).")
             sys.exit(0)
         plan = build_correction_plan(items, _load_json(args.misure_prima))
-        print(f"Voci approvate: {len(items)} (dry-run: nessun file modificato)\n")
+        tot_nodi = sum(len(p["nodi"]) for p in plan)
+        print(f"Voci da correggere: {len(items)}, nodi totali: {tot_nodi} (dry-run: nessun file modificato)\n")
         print(format_plan(plan))
         mancanti = [p["id"] for p in plan if p["stato"] == "misure_mancanti"]
         if mancanti:

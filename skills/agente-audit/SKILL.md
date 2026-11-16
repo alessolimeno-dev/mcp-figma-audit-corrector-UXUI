@@ -27,7 +27,10 @@ L'agente delega i calcoli e le definizioni ai moduli condivisi della cartella `s
 - **`skills/common/references/wcag.json`:** dizionario unico con 86 criteri W3C WCAG 2.2 e 10 Euristiche di Nielsen.
 - **`skills/common/lib/normative.py`:** carica a 0 token il dizionario normativo ed estrae metadati e tecniche ufficiali (es. ARIA14, H37, H42).
 - **`skills/common/lib/color_utils.py`:** esegue il calcolo deterministico del rapporto di contrasto (`contrast_ratio`) e la luminanza relativa.
-- **`skills/common/lib/excel_utils.py`:** gestisce la clonazione del template Excel e la scrittura dei fogli di calcolo.
+- **`skills/common/lib/excel_utils.py`:** rileva `openpyxl`, **obbligatorio** (nessun fallback: senza `openpyxl` lo script si ferma con un messaggio chiaro).
+- **`skills/common/lib/nodi_utils.py`:** normalizza i nodi di una voce (tipo, doppioni, ordine fisso componente → istanze → nodi singoli), scrive/legge l'elenco nella colonna D e definisce la regola "Da correggere" (formula Excel e funzione Python, la stessa per audit e correzione).
+
+> **Le regole di questa skill sono universali.** Valgono per qualsiasi file Figma: non contengono ID, nomi di componenti, pagine o colori di un progetto particolare. Gli esempi qui sotto usano segnaposto (`<id>`, `Bottone primario`). Non aggiungere mai a questa skill, allo script o ai moduli comuni regole o eccezioni legate a un solo file.
 
 ---
 
@@ -37,9 +40,9 @@ L'agente delega i calcoli e le definizioni ai moduli condivisi della cartella `s
    - URL Figma fornito dall'utente (es. `https://www.figma.com/design/<file-key>/<titolo>?node-id=...`).
    - L'agente legge i nodi dei frame Desktop e Mobile con i soli strumenti MCP elencati nella sezione 4 ("Strumenti Figma consentiti").
 2. **Template Excel (`Audit_modello.xlsx`):**
-   - Modello base contenente i fogli `Sessione`, `Voci`, `Corretto`, `Riepilogo`.
+   - Modello base contenente i fogli `Sessione`, `Voci`, `Nodi`, `Corretto`, `Riepilogo`.
 3. **Payload Dati (formato JSON per lo script):**
-   - L'agente sintetizza i risultati dell'ispezione in una struttura JSON:
+   - L'agente scrive **una segnalazione per ogni difetto trovato**, elencando i nodi coinvolti in `nodi`. Non deve raggruppare né numerare: lo fa `checker.py` (vedi 4.3). Una segnalazione può avere un solo nodo o più nodi.
      ```json
      {
        "session": {
@@ -51,24 +54,25 @@ L'agente delega i calcoli e le definizioni ai moduli condivisi della cartella `s
        },
        "voci": [
          {
-           "id": "V-01",
-           "pagina": "Desktop / Home",
-           "elemento": "Pulsante CTA Carrello",
-           "nodo_id": "12:34",
+           "elemento": "Bottone primario",
+           "tipo_elemento": "pulsante",
            "riferimento": "WCAG 1.4.3 (AA)",
            "descrizione": "Contrasto testo insufficiente",
            "gravita": "Moderata",
-           "misure": { "fg": "#888888", "bg": "#FFFFFF" }
+           "misure": { "fg": "#888888", "bg": "#FFFFFF" },
+           "nodi": [
+             { "id": "<id-componente>", "pagina": "Pagina A", "tipo": "Componente" },
+             { "id": "<id-istanza>", "pagina": "Pagina B", "tipo": "Istanza" }
+           ]
          },
          {
-           "id": "V-02",
-           "pagina": "Mobile / Home",
            "elemento": "Icona chiudi",
-           "nodo_id": "12:40",
+           "tipo_elemento": "pulsante-solo-icona",
            "riferimento": "WCAG 2.5.8 (AA)",
            "descrizione": "Target interattivo troppo piccolo",
            "gravita": "Grave",
-           "misure": { "w": 18, "h": 18 }
+           "misure": { "w": 18, "h": 18 },
+           "nodi": [ { "id": "<id-nodo>", "pagina": "Pagina A", "tipo": "Nodo singolo" } ]
          }
        ],
        "corretto": [
@@ -100,6 +104,49 @@ Si usano **solo** questi strumenti del server MCP di Figma, nell'ordine indicato
 | 5 | `get_screenshot` | Solo quando serve un giudizio visivo (euristiche di Nielsen, gerarchia, leggibilità). È lo strumento che costa più token: al massimo uno per frame. |
 
 Questo elenco è applicato anche dall'hook `skills/common/lib/figma_guard.py`, che blocca ogni altro strumento Figma mentre `/audit` è attivo.
+
+### 4.1 Copertura e lettura: tutte le pagine, frame per frame
+- `get_metadata` **senza** `nodeId` elenca le pagine del file (costa poco). Dichiara in chat quali pagine e frame analizzerai (Desktop, Mobile, tutto il flusso).
+- Non chiamare `get_metadata` su una pagina intera: in un file reale supera il limite di token. Leggi **un frame di pagina o una sezione alla volta**. Ignora i nodi con `hidden="true"`.
+- Il metadata di un frame **non espande i figli delle istanze**. Per vedere cosa c'è dentro un'istanza (es. un footer), chiama `get_metadata` sull'ID di quell'istanza: i suoi figli hanno ID `I<istanza>;<nodo-nel-componente>`.
+- Ciò che riguarda un componente o un elemento ripetuto va cercato **in tutte le pagine analizzate**, non solo nella prima: la correzione verrà applicata solo ai nodi elencati in `nodi`, quindi un nodo non elencato non sarà mai corretto.
+
+### 4.2 Identificazione dei nodi (solo lettura)
+Per ogni nodo con un difetto scrivi in `nodi` `id`, `pagina` e `tipo`. Il tipo si ricava dal **tag** del nodo in `get_metadata` e dal suo ID, mai con `use_figma`:
+
+| `tipo` | Quando |
+|---|---|
+| `Componente` | Tag `symbol`: la definizione di un componente (anche ogni variante di un componente con varianti). |
+| `Istanza` | Tag `instance`, oppure qualunque nodo che sta dentro un'istanza: il suo ID ha la forma `I<istanza>;<nodo-nel-componente>` (inizia con `I` e contiene `;`). |
+| `Nodo singolo` | Tutto il resto (`frame`, `text`, `vector`, forme…) che non appartiene a un componente né a un'istanza. |
+
+Le istanze **non indicano il componente d'origine né la variante** (né `get_metadata` né `get_design_context`): l'unico legame è il nome, che di norma coincide con quello del componente.
+
+Regole:
+1. **Difetto in un componente:** riporta il componente (`Componente`) **e tutte le sue istanze** nelle pagine analizzate, in una sola segnalazione. Come trovarle:
+   - *istanze di primo livello:* nei frame analizzati, i tag `instance` con lo stesso nome del componente. Se un'istanza è stata rinominata può sfuggire: scrivilo nel campo `motivo`;
+   - *nodo dentro un'istanza:* se il difetto è nel nodo `N` del componente e `X` è l'ID di un'istanza, il nodo corrispondente è `X;N`, con il prefisso `I` davanti a `X` se non lo ha già (es. istanza `1:100`, nodo `1:55` → `I1:100;1:55`; istanza annidata `I1:100;1:55`, nodo `1:9` → `I1:100;1:55;1:9`). Si costruisce **senza leggere** l'istanza: l'ultimo segmento è sempre l'ID del nodo nel componente.
+2. **Istanze con aspetto diverso:** un'istanza può avere dimensioni o stili diversi dal componente (override di colore, testo, misura). Se la differenza è visibile (dimensioni diverse nel metadata) o sospetta, leggila a parte con `get_design_context` e segnalala con **le sue misure**: il raggruppamento la terrà in una voce separata. Per le istanze identiche al componente vale la misura del componente (scrivilo nel campo `motivo`; la correzione le rilegge dopo la modifica).
+3. **Più difetti sullo stesso nodo:** una segnalazione per ogni difetto. Lo stesso nodo comparirà in più righe del foglio `Nodi`, una per errore.
+4. **Solo i nodi con errore** vanno in `nodi` (e quindi nel foglio `Nodi`). Gli elementi conformi vanno nel foglio `Corretto`.
+5. Non inventare ID: usa solo ID letti dagli strumenti o costruiti con la regola 1. In caso di dubbio sul tipo, scrivi `Nodo singolo`.
+
+### 4.3 Raggruppamento degli errori comuni (fatto da `checker.py`, a 0 token)
+Non unire le segnalazioni a mano e non numerare le voci: `checker.py` unisce in **una sola voce** (un solo ID in colonna A, elenco dei nodi in colonna D) le segnalazioni con lo stesso errore comune, con queste regole:
+
+| Tipo di difetto | Si uniscono se hanno in comune |
+|---|---|
+| Contrasto (1.4.3, 1.4.6, 1.4.11) | riferimento e **misure identiche** (stessi `fg`, `bg`, `testo_grande`, `componente_ui`) |
+| Dimensione target (2.5.5, 2.5.8) | riferimento e **stesse misure** (`w`, `h`) |
+| Tutti gli altri criteri (WCAG con annotazione, euristiche di Nielsen, ecc.) | riferimento, `tipo_elemento` e **descrizione identica** (confronto senza maiuscole e punteggiatura) |
+
+Nel dubbio la voce **si divide**: elementi con colori o dimensioni diverse restano voci separate, anche se hanno la stessa descrizione, perché la correzione dipende dai valori. Una segnalazione di contrasto o target **senza `misure`** non viene mai unita alle altre. Per favorire il raggruppamento: copia i valori `fg`/`bg`/`w`/`h` esattamente come letti da Figma e scrivi la `descrizione` come **frase generica del difetto, sempre uguale per lo stesso difetto** (es. «Manca il testo alternativo»), senza nomi di nodi, pagine o valori: quelli stanno in `elemento`, `nodi` e `misure`. Descrizioni diverse producono voci diverse.
+
+### 4.4 Tipo di elemento (`tipo_elemento`, lista chiusa)
+Ogni segnalazione dichiara la categoria funzionale dell'elemento, scelta **solo** tra: `immagine-informativa`, `immagine-decorativa`, `pulsante-solo-icona`, `pulsante`, `link`, `campo-form`, `titolo`, `testo`, `contenitore`, `altro`. Serve a scegliere il suggerimento di annotazione senza indovinare dal testo libero e a non unire elementi di natura diversa. Un valore fuori lista viene trattato come `altro`.
+
+### 4.5 Suggerimenti di annotazione: testo guida, mai codice compilato
+La colonna P ("Suggerimento (Annotazioni in Figma)") è generata da `checker.py` da `wcag.json` in base a riferimento e `tipo_elemento`. Contiene i **tag e gli attributi da annotare** con segnaposto tra parentesi quadre (es. `<img alt="[descrizione funzione/contenuto]">`). Non riscriverla e non sostituire i segnaposto con testi inventati: la descrizione reale (alt, aria-label, ecc.) la decidono progettista e sviluppatori. La correzione riporterà il suggerimento così com'è.
 - **Calcoli Deterministici a 0 Token (eseguiti da `checker.py`, non dal modello):**
   - Contrasto cromatico testo (WCAG 1.4.3: $\ge 4.5:1$ per testo normale, $\ge 3.0:1$ per testo grande $\ge 18$pt o $\ge 14$pt bold).
   - Contrasto componenti grafici e stati interattivi (WCAG 1.4.11: $\ge 3.0:1$).
@@ -139,11 +186,12 @@ cat payload.json | <ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/ch
 
 - **File Excel di Audit Generato (`<nome file Figma>/<nome file Figma>-<data>-audit.xlsx`):**
   1. **Foglio `Sessione`:** metadati completi dell'audit.
-  2. **Foglio `Voci` (23 Colonne):**
-     - *Colonne A-Q compilate dall'agente:* `ID`, `Pagina`, `Elemento`, `ID Nodo Figma` (colonna D), `Ambito`, `Riferimento`, `Descrizione`, `Gravità`, `Stato`, `Affidabilità`, `Motivo`, `Conflitto`, `Motivo conflitto`, `Correzione proposta`, `Dove si corregge`, `Suggerimento (Annotazioni in Figma)` (colonna P), `Fonte`.
+  2. **Foglio `Voci` (23 Colonne):** una riga per **errore comune** (ID assegnato dallo script: V-01, V-02, …).
+     - *Colonne A-Q compilate dall'agente:* `ID`, `Pagina` (le pagine dei nodi), `Elemento`, `ID Nodi Figma` (colonna D: **un ID per riga della cella**, in ordine componente → istanze → nodi singoli), `Ambito`, `Riferimento`, `Descrizione`, `Gravità`, `Stato`, `Affidabilità`, `Motivo`, `Conflitto`, `Motivo conflitto`, `Correzione proposta`, `Dove si corregge`, `Suggerimento (Annotazioni in Figma)` (colonna P), `Fonte`.
      - *Colonne R-W vuote (riservate al Progettista):* `Decisione`, `Motivo`, `Tipo motivo`, `Gravità confermata`, `Chi applica la correzione`, `Data decisione`.
-  3. **Foglio `Corretto`:** elementi esaminati e conformi.
-  4. **Foglio `Riepilogo`:** matrice d'impatto incrociata (Gravità $\times$ Ambito).
+  3. **Foglio `Nodi`:** una riga per ogni coppia nodo-errore, solo per i nodi con un errore. Colonne: `ID nodo Figma`, `Pagina`, `Tipo` (Componente / Istanza / Nodo singolo), `Elemento`, `ID errore riferimento` (l'ID della voce), `Da correggere`. L'ultima colonna è una **formula**: vale `Sì` solo se, nella voce collegata, `Decisione` (R) è `Accolta` o `Modificata` **e** `Chi applica la correzione` (V) è `Agente` o `Entrambi`; altrimenti `No`. Il progettista non la compila: si aggiorna quando sceglie dai menù di Voci.
+  4. **Foglio `Corretto`:** elementi esaminati e conformi.
+  5. **Foglio `Riepilogo`:** matrice d'impatto incrociata (Gravità $\times$ Ambito).
 - **Passaggio di Consegna:** l'agente comunica all'utente in chat:
   1. il percorso del file generato;
   2. il promemoria: *"Prima della Fase 2 (correzione), salva una copia locale del file Figma: File → Save local copy… (.fig)"*.

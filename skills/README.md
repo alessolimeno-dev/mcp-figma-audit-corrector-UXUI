@@ -8,13 +8,13 @@ Questa cartella è la **singola fonte di verità** per le skill del repository, 
 
 - **`agente-audit/`**
   - `SKILL.md`: regole e vincoli per l'analisi euristica e normativa (`READ-ONLY`), con l'elenco chiuso degli strumenti Figma.
-  - `scripts/checker.py`: motore deterministico Python per contrasto, target size e generazione del report Excel.
+  - `scripts/checker.py`: motore deterministico Python per contrasto, target size, raggruppamento degli errori comuni (una voce con più nodi) e generazione del report Excel (fogli `Voci` e `Nodi`).
 - **`agente-correzione/`**
   - `SKILL.md`: regole e vincoli per la correzione mirata su Figma (`WRITE-BOUNDED`), con l'elenco chiuso degli strumenti Figma.
-  - `scripts/corrector.py`: motore deterministico Python per estrazione delle decisioni approvate, calcolo HLS/padding e Log Correzioni.
+  - `scripts/corrector.py`: motore deterministico Python per estrazione delle voci da correggere con tutti i loro nodi, calcolo HLS/padding e Log Correzioni (una riga per ID errore).
 - **`common/`**
   - `references/wcag.json`: dataset W3C WCAG 2.2 + 10 Euristiche di Nielsen.
-  - `lib/`: moduli Python condivisi (`color_utils.py`, `wcag_checks.py`, `normative.py`, `excel_utils.py`) e script degli hook (`figma_guard.py`, `token_log.py`).
+  - `lib/`: moduli Python condivisi (`color_utils.py`, `wcag_checks.py`, `normative.py`, `excel_utils.py`, `nodi_utils.py` con nodi di una voce e regola "Da correggere") e script degli hook (`figma_guard.py`, `token_log.py`).
 
 ---
 

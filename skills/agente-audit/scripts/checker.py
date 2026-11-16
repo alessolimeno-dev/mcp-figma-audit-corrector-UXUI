@@ -13,6 +13,7 @@ Architettura a 0 Token AI basata su librerie e dataset standard ufficiali:
 - Compilazione automatica a 0 token della colonna 'Suggerimento (Annotazioni in Figma)'
 """
 
+import copy
 import math
 import sys
 import json
@@ -65,6 +66,11 @@ try:
         check_target_size,
         measure,
     )
+    from skills.common.lib.nodi_utils import (
+        normalize_nodi,
+        nodi_to_cell,
+        formula_da_correggere,
+    )
 except ImportError:
     from common.lib.color_utils import (  # type: ignore
         HAS_WCAG_CONTRAST_RATIO,
@@ -92,6 +98,11 @@ except ImportError:
         check_contrast,
         check_target_size,
         measure,
+    )
+    from common.lib.nodi_utils import (  # type: ignore
+        normalize_nodi,
+        nodi_to_cell,
+        formula_da_correggere,
     )
 
 _load_wcag_library = load_wcag_library
@@ -175,6 +186,31 @@ def check_auto_layout_text(node_layout: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ==============================================================================
+# TIPO DI ELEMENTO UI (lista chiusa, generica: vale per qualsiasi progetto Figma)
+# ==============================================================================
+# Categoria funzionale del nodo, scelta dal modello. Serve a (1) scegliere il suggerimento di annotazione senza
+# indovinare dalle parole del testo libero e (2) tenere separati nel raggruppamento elementi di natura diversa.
+TIPI_ELEMENTO = (
+    "immagine-informativa", "immagine-decorativa", "pulsante-solo-icona", "pulsante",
+    "link", "campo-form", "titolo", "testo", "contenitore", "altro",
+)
+# Parola chiave che attiva l'affinamento in evaluate_suggerimento_annotazione (gli altri tipi non lo attivano)
+_TIPO_ELEMENTO_KEYWORD = {
+    "immagine-informativa": "immagine",
+    "immagine-decorativa": "immagine decorativa",
+    "pulsante-solo-icona": "solo-icona",
+}
+
+
+def normalize_tipo_elemento(tipo: Any) -> str:
+    """Porta il tipo_elemento a un valore della lista chiusa ('' se mancante; 'altro' se non riconosciuto)."""
+    t = re.sub(r"[\s_]+", "-", str(tipo or "").strip().lower())
+    if not t:
+        return ""
+    return t if t in TIPI_ELEMENTO else "altro"
+
+
+# ==============================================================================
 # VALUTAZIONE DETERMINISTICA CAMPI EXCEL E SUGGERIMENTO ANNOTAZIONI FIGMA
 # ==============================================================================
 
@@ -224,17 +260,24 @@ def evaluate_suggerimento_annotazione(
     elemento: str = "",
     descrizione: str = "",
     correzione: str = "",
-    annotazione_presente: bool = False
+    annotazione_presente: bool = False,
+    tipo_elemento: str = ""
 ) -> str:
     """
     Genera deterministicamente a 0 token il suggerimento per la nuova colonna
     'Suggerimento (Annotazioni in Figma)' attingendo dalle Tecniche W3C in references/wcag.json.
     Non impone il testo editoriale dell'aria-label o dell'alt, ma indica il codice/attributo da annotare.
+    Se `tipo_elemento` (lista chiusa TIPI_ELEMENTO) è dichiarato, l'affinamento usa SOLO quello e non le parole
+    chiave del testo libero; senza `tipo_elemento` vale l'euristica storica a parole chiave.
     """
     if annotazione_presente:
         return "Annotazione già presente in Figma"
 
-    el_low = f"{elemento} {descrizione} {correzione}".lower()
+    tipo = normalize_tipo_elemento(tipo_elemento)
+    if tipo:
+        el_low = _TIPO_ELEMENTO_KEYWORD.get(tipo, "")
+    else:
+        el_low = f"{elemento} {descrizione} {correzione}".lower()
     entry = lookup_normative_entry(riferimento)
     base_sugg = entry.get("annotazione_figma", "-")
 
@@ -442,12 +485,17 @@ def compile_audit_report(
     Compila deterministicamente l'audit report clonando Audit_modello.xlsx.
     Include:
     - Colonna P 'Suggerimento (Annotazioni in Figma)' nel foglio Voci (23 colonne: A-Q Agente, R-W Progettista)
+    - Colonna D di Voci: elenco dei nodi della voce (uno per riga); foglio Nodi: una riga per coppia nodo-errore,
+      con la formula 'Da correggere' calcolata da Decisione (R) e Chi applica (V) di Voci.
+    Richiede openpyxl (nessun fallback): ogni voce di voci_data porta la lista normalizzata `nodi`.
     """
+    if not HAS_OPENPYXL:
+        raise SystemExit(
+            "[checker] ERRORE: openpyxl non è installato. Usa l'ambiente locale del progetto "
+            "(<ROOT>/.venv/bin/python) oppure installa le dipendenze: pip install -r requirements.txt"
+        )
     shutil.copyfile(template_path, output_path)
     stats = calculate_riepilogo_stats(voci_data, session_data)
-
-    if not HAS_OPENPYXL:
-        return _compile_audit_report_xml(output_path, session_data, voci_data, corretto_data, stats)
 
     wb = openpyxl.load_workbook(output_path)
 
@@ -472,7 +520,7 @@ def compile_audit_report(
 
     # 3. Compila Voci (23 colonne: A-Q Agente con P='Suggerimento (Annotazioni in Figma)', R-W Progettista)
     s_voci = wb['Voci']
-    s_voci.cell(1, 4, 'ID Nodo Figma')
+    s_voci.cell(1, 4, 'ID Nodi Figma (uno per riga)')
     s_voci.cell(1, 8, 'Gravità (Lieve, Moderata, Grave, Bloccante)')
     s_voci.cell(1, 15, 'Dove si corregge (Figma / Codice)')
     s_voci.cell(1, 16, 'Suggerimento (Annotazioni in Figma)')
@@ -501,7 +549,7 @@ def compile_audit_report(
         s_voci.cell(r, 1, item.get('id', ''))
         s_voci.cell(r, 2, item.get('pagina', ''))
         s_voci.cell(r, 3, elem)
-        s_voci.cell(r, 4, item.get('nodo_id') or item.get('node_id') or item.get('id_nodo') or '')
+        s_voci.cell(r, 4, nodi_to_cell(item.get('nodi', [])))  # un ID nodo per riga
         s_voci.cell(r, 5, ambito)
         s_voci.cell(r, 6, ref)
         s_voci.cell(r, 7, desc)
@@ -515,6 +563,20 @@ def compile_audit_report(
         s_voci.cell(r, 15, dove)
         s_voci.cell(r, 16, sugg_ann)
         s_voci.cell(r, 17, item.get('fonte', 'Agente di audit'))
+
+    # 3b. Compila Nodi: una riga per coppia nodo-errore (solo nodi con errore). 'Da correggere' è una formula
+    #     che legge Decisione (R) e Chi applica (V) di Voci: si aggiorna da sola quando il progettista compila i menù.
+    s_nodi = wb['Nodi']
+    stile_riga = [copy.copy(s_nodi.cell(2, c)._style) for c in range(1, 7)]
+    r = 2
+    for item in voci_data:
+        for n in item.get('nodi', []):
+            valori = [n['id'], n['pagina'], n['tipo'], n['elemento'], item.get('id', ''), formula_da_correggere(r)]
+            for c, val in enumerate(valori, start=1):
+                cell = s_nodi.cell(r, c, val)
+                cell._style = copy.copy(stile_riga[c - 1])
+            r += 1
+    wb.calculation.fullCalcOnLoad = True  # Excel ricalcola le formule all'apertura
 
     # 4. Compila Corretto
     s_corr = wb['Corretto']
@@ -544,187 +606,134 @@ def compile_audit_report(
     return output_path
 
 
-def _compile_audit_report_xml(
-    output_path: str,
-    session_data: Dict[str, Any],
-    voci_data: List[Dict[str, Any]],
-    corretto_data: List[Dict[str, Any]],
-    stats: Dict[str, Any]
-) -> str:
-    """Fallback OpenXML puro in libreria standard Python quando openpyxl non è installato."""
-    NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
-    ET.register_namespace('', NS)
-    ET.register_namespace('r', 'http://schemas.openxmlformats.org/officeDocument/2006/relationships')
+# ==============================================================================
+# RAGGRUPPAMENTO DETERMINISTICO DELLE SEGNALAZIONI IN VOCI (errori comuni)
+# ==============================================================================
+_MISURABILI = ("1.4.3", "1.4.6", "1.4.11", "2.5.5", "2.5.8")
+_GRAVITA_ORDINE = {"": 0, "Lieve": 1, "Moderata": 2, "Grave": 3, "Bloccante": 4}
 
-    def qn(tag: str) -> str:
-        return f'{{{NS}}}{tag}'
 
-    def set_inline_str(row_el: ET.Element, coord: str, text: str, default_style: str = '25'):
-        c = None
-        for cell in row_el.findall(qn('c')):
-            if cell.attrib.get('r') == coord:
-                c = cell
-                break
-        if c is None:
-            c = ET.SubElement(row_el, qn('c'), {'r': coord, 's': default_style})
-        style = c.attrib.get('s', default_style)
-        c.clear()
-        c.attrib.update({'r': coord, 's': style, 't': 'inlineStr'})
-        is_el = ET.SubElement(c, qn('is'))
-        t_el = ET.SubElement(is_el, qn('t'))
-        t_el.text = str(text)
+def _norm_text(s: Any) -> str:
+    return re.sub(r"\s+", " ", str(s or "")).strip().lower()
 
-    def get_or_create_row(sd: ET.Element, rn: int) -> ET.Element:
-        for row in sd.findall(qn('row')):
-            if int(row.attrib.get('r', '0')) == rn:
-                return row
-        new_r = ET.SubElement(sd, qn('row'), {'r': str(rn)})
-        return new_r
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(output_path, 'r') as zin:
-        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zout:
-            for item in zin.infolist():
-                if item.filename == 'xl/worksheets/sheet1.xml':
-                    continue
-                data = zin.read(item.filename)
-                if item.filename == '[Content_Types].xml':
-                    ct_root = ET.fromstring(data)
-                    for ov in list(ct_root):
-                        if ov.attrib.get('PartName') == '/xl/worksheets/sheet1.xml':
-                            ct_root.remove(ov)
-                    data = ET.tostring(ct_root, encoding='utf-8', xml_declaration=True)
-                elif item.filename == 'xl/_rels/workbook.xml.rels':
-                    rels_root = ET.fromstring(data)
-                    for rel in list(rels_root):
-                        if rel.attrib.get('Target', '').endswith('sheet1.xml'):
-                            rels_root.remove(rel)
-                    data = ET.tostring(rels_root, encoding='utf-8', xml_declaration=True)
-                elif item.filename == 'xl/workbook.xml':
-                    wb_root = ET.fromstring(data)
-                    sheets_el = wb_root.find(qn('sheets'))
-                    if sheets_el is not None:
-                        for s_el in list(sheets_el):
-                            if s_el.attrib.get('name') == 'Istruzioni':
-                                sheets_el.remove(s_el)
-                    dn_el = wb_root.find(qn('definedNames'))
-                    if dn_el is not None:
-                        for d_el in dn_el.findall(qn('definedName')):
-                            if d_el.attrib.get('localSheetId') == '2':
-                                d_el.set('localSheetId', '1')
-                    data = ET.tostring(wb_root, encoding='utf-8', xml_declaration=True)
-                elif item.filename == 'xl/worksheets/sheet2.xml':
-                    root = ET.fromstring(data)
-                    sd = root.find(qn('sheetData'))
-                    sess_map = {
-                        4: ('Caso / Progetto analizzato', session_data.get('caso', '')),
-                        5: ('File Figma analizzato (nome)', session_data.get('file_figma', '')),
-                        6: ('Link al file Figma', session_data.get('link_figma', '')),
-                        7: ('Versione del file (per esempio v0 pre-audit)', session_data.get('versione', 'v0')),
-                        8: ('Data e Timestamp analisi', session_data.get('timestamp', '')),
-                        9: ('Pagine analizzate', session_data.get('pagine', '')),
-                        10: ('Agente di audit e librerie richiamate', session_data.get('agente', '')),
-                        11: ('Estensione Figma e versione', session_data.get('estensione', '')),
-                        12: ('Modello e versione AI', session_data.get('modello', '')),
-                        13: ('Note', session_data.get('note', '')),
-                    }
-                    if sd is not None:
-                        for rn, (label_txt, val_txt) in sess_map.items():
-                            row = get_or_create_row(sd, rn)
-                            set_inline_str(row, f'A{rn}', label_txt, '21')
-                            set_inline_str(row, f'B{rn}', val_txt, '22')
-                    data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-                elif item.filename == 'xl/worksheets/sheet3.xml':
-                    root = ET.fromstring(data)
-                    sd = root.find(qn('sheetData'))
-                    if sd is not None:
-                        header_row = get_or_create_row(sd, 1)
-                        headers_map = [
-                            ('D', 'ID Nodo Figma', '23'),
-                            ('H', 'Gravità (Lieve, Moderata, Grave, Bloccante)', '23'),
-                            ('O', 'Dove si corregge (Figma / Codice)', '23'),
-                            ('P', 'Suggerimento (Annotazioni in Figma)', '23'),
-                            ('Q', 'Fonte della segnalazione', '23'),
-                            ('R', 'Decisione', '24'),
-                            ('S', 'Motivo della decisione', '24'),
-                            ('T', 'Tipo di motivo', '24'),
-                            ('U', 'Gravità confermata', '24'),
-                            ('V', 'Chi applica la correzione', '24'),
-                            ('W', 'Data della decisione', '24'),
-                        ]
-                        for col_let, h_txt, st_id in headers_map:
-                            set_inline_str(header_row, f'{col_let}1', h_txt, st_id)
+def _is_misurabile(ref: str) -> bool:
+    return any(k in str(ref or "") for k in _MISURABILI)
 
-                        for idx, v_item in enumerate(voci_data):
-                            rn = idx + 2
-                            row_el = get_or_create_row(sd, rn)
-                            ref = v_item.get('riferimento', '')
-                            elem = v_item.get('elemento', '')
-                            desc = v_item.get('descrizione', '')
-                            corr = v_item.get('correzione', '')
-                            ambito = v_item.get('ambito') or evaluate_ambito(ref)
-                            stato = v_item.get('stato') or evaluate_stato(ref)
-                            gravita = normalize_gravita(v_item.get('gravita'))
-                            dove = v_item.get('dove_si_corregge') or evaluate_dove_si_corregge(ref, desc, corr)
-                            sugg_ann = v_item.get('suggerimento_annotazione') or evaluate_suggerimento_annotazione(
-                                ref, elem, desc, corr, bool(v_item.get('annotazione_presente', False))
-                            )
-                            vals = [
-                                ('A', v_item.get('id', '')),
-                                ('B', v_item.get('pagina', '')),
-                                ('C', elem),
-                                ('D', v_item.get('nodo_id') or v_item.get('node_id') or ''),
-                                ('E', ambito),
-                                ('F', ref),
-                                ('G', desc),
-                                ('H', gravita),
-                                ('I', stato),
-                                ('J', v_item.get('affidabilita', '')),
-                                ('K', v_item.get('motivo', '')),
-                                ('L', v_item.get('conflitto', 'No')),
-                                ('M', v_item.get('motivo_conflitto', '')),
-                                ('N', corr),
-                                ('O', dove),
-                                ('P', sugg_ann),
-                                ('Q', v_item.get('fonte', 'Agente di audit')),
-                            ]
-                            for col_let, val_txt in vals:
-                                set_inline_str(row_el, f'{col_let}{rn}', val_txt, '25')
-                    data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-                elif item.filename == 'xl/worksheets/sheet4.xml':
-                    root = ET.fromstring(data)
-                    sd = root.find(qn('sheetData'))
-                    if sd is not None:
-                        for idx, c_item in enumerate(corretto_data):
-                            rn = idx + 2
-                            row_el = get_or_create_row(sd, rn)
-                            ref = c_item.get('riferimento', '')
-                            ambito = c_item.get('ambito') or evaluate_ambito(ref)
-                            for col_let, val_txt in [
-                                ('A', ambito),
-                                ('B', c_item.get('pagina', '')),
-                                ('C', c_item.get('elemento', '')),
-                                ('D', c_item.get('descrizione', '')),
-                                ('E', ref),
-                            ]:
-                                set_inline_str(row_el, f'{col_let}{rn}', val_txt, '25')
-                    data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-                elif item.filename == 'xl/worksheets/sheet5.xml':
-                    root = ET.fromstring(data)
-                    sd = root.find(qn('sheetData'))
-                    if sd is not None:
-                        for coord, val_txt in stats.items():
-                            m_coord = re.match(r"([A-Z]+)(\d+)", coord)
-                            if m_coord:
-                                rn = int(m_coord.group(2))
-                                row_el = get_or_create_row(sd, rn)
-                                set_inline_str(row_el, coord, str(val_txt), '27')
-                    data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
-                zout.writestr(item, data)
 
-    with open(output_path, 'wb') as f:
-        f.write(buf.getvalue())
-    return output_path
+def _misure_key(misure: Optional[Dict[str, Any]]) -> Optional[Tuple[Any, ...]]:
+    """Chiave delle misure: i valori che determinano la correzione calcolata. None se mancano dati sufficienti."""
+    m = misure or {}
+    try:
+        if m.get("fg") and m.get("bg"):
+            return ("contrasto", str(m["fg"]).strip().upper(), str(m["bg"]).strip().upper(),
+                    bool(m.get("testo_grande", False)), bool(m.get("componente_ui", False)))
+        if m.get("w") is not None and m.get("h") is not None:
+            return ("target", round(float(m["w"]), 2), round(float(m["h"]), 2),
+                    None if m.get("min") is None else float(m["min"]))
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def _group_key(item: Dict[str, Any], tipo: str, sugg: str, unique: int) -> Tuple[Any, ...]:
+    """
+    Chiave di raggruppamento. Regola di fondo: NEL DUBBIO SI DIVIDE (una voce in più costa una riga,
+    una fusione sbagliata applicherebbe la stessa correzione a nodi che ne richiedono una diversa).
+    - criteri misurabili (contrasto, target): riferimento + misure identiche (colori / dimensioni);
+      senza misure non si raggruppa mai;
+    - tutto il resto (criteri WCAG con annotazione, euristiche di Nielsen, ecc.): riferimento + tipo_elemento +
+      suggerimento + descrizione identica.
+    """
+    ref = item.get("riferimento") or item.get("ref", "")
+    ref_key = extract_wcag_num(ref) or _norm_text(ref)
+    if _is_misurabile(ref):
+        mk = _misure_key(item.get("misure"))
+        return ("misura", ref_key, mk) if mk is not None else ("unica", unique)
+    # Tutti i criteri non misurabili si uniscono solo con descrizione identica (confronto senza maiuscole e
+    # punteggiatura): due difetti diversi dello stesso criterio (es. gerarchia dei titoli e landmark in 1.3.1)
+    # hanno lo stesso suggerimento ma restano voci separate, così il progettista decide su ciascuno.
+    desc_key = re.sub(r"[^\w\s]", "", _norm_text(item.get("descrizione") or item.get("nota")))
+    return ("descrizione", ref_key, tipo, sugg or "", desc_key)
+
+
+def _join_distinct(values: List[str], sep: str = "; ") -> str:
+    seen: List[str] = []
+    for v in values:
+        v = str(v or "").strip()
+        if v and v not in seen:
+            seen.append(v)
+    return sep.join(seen)
+
+
+def group_voci(voci_in: List[Dict[str, Any]], warn=None) -> List[Dict[str, Any]]:
+    """
+    Unisce in una sola voce le segnalazioni che hanno lo stesso errore comune (vedi _group_key).
+    Ogni segnalazione porta i suoi `nodi` (anche uno solo); la voce risultante li raccoglie tutti.
+    Gli ID (V-01, V-02, ...) sono assegnati qui, in ordine di prima comparsa.
+    """
+    warn = warn or (lambda _m: None)
+    gruppi: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    for idx, raw in enumerate(voci_in):
+        label = raw.get("id") or f"segnalazione {idx + 1}"
+        elem = raw.get("elemento", "")
+        ref = raw.get("riferimento") or raw.get("ref", "")
+        tipo_in = raw.get("tipo_elemento", "")
+        tipo = normalize_tipo_elemento(tipo_in)
+        if tipo_in and str(tipo_in).strip().lower().replace(" ", "-").replace("_", "-") not in TIPI_ELEMENTO:
+            warn(f"{label}: tipo_elemento '{tipo_in}' non valido (ammessi: {', '.join(TIPI_ELEMENTO)}); usato 'altro'")
+        nodi = normalize_nodi(raw.get("nodi") or [], default_pagina=raw.get("pagina", ""),
+                              default_elemento=elem, warn=lambda m, _l=label: warn(f"{_l}: {m}"))
+        sugg = raw.get("suggerimento_annotazione") or evaluate_suggerimento_annotazione(
+            ref, elem, raw.get("descrizione", ""), raw.get("correzione", ""),
+            bool(raw.get("annotazione_presente", False)), tipo
+        )
+        key = _group_key(raw, tipo, sugg, idx)
+        if key not in gruppi:
+            g = dict(raw)
+            g["tipo_elemento"] = tipo
+            g["suggerimento_annotazione"] = sugg
+            g["nodi"] = list(nodi)
+            g["_descrizioni"] = [raw.get("descrizione") or raw.get("nota") or ""]
+            g["_correzioni"] = [raw.get("correzione") or raw.get("azione") or ""]
+            g["_gravita"] = [raw.get("gravita", "")]
+            g["_affidabilita"] = [raw.get("affidabilita", "Alta")]
+            g["_conflitti"] = [raw.get("conflitto", "No")]
+            gruppi[key] = g
+        else:
+            g = gruppi[key]
+            g["nodi"].extend(nodi)
+            g["_descrizioni"].append(raw.get("descrizione") or raw.get("nota") or "")
+            g["_correzioni"].append(raw.get("correzione") or raw.get("azione") or "")
+            g["_gravita"].append(raw.get("gravita", ""))
+            g["_affidabilita"].append(raw.get("affidabilita", "Alta"))
+            g["_conflitti"].append(raw.get("conflitto", "No"))
+
+    out: List[Dict[str, Any]] = []
+    for n, g in enumerate(gruppi.values(), start=1):
+        g["id"] = f"V-{n:02d}"
+        g["nodi"] = normalize_nodi(g["nodi"], warn=lambda m, _i=g["id"]: warn(f"{_i}: {m}"))
+        nomi = list(dict.fromkeys(x["elemento"] for x in g["nodi"] if x["elemento"]))
+        tot = len(g["nodi"])
+        if nomi:
+            if len(nomi) == 1:
+                g["elemento"] = nomi[0] + (f" ({tot} nodi)" if tot > 1 else "")
+            else:
+                altri = tot - 1
+                g["elemento"] = nomi[0] + f" (+{altri} {'nodo' if altri == 1 else 'nodi'})"
+        g["descrizione"] = _join_distinct(g.pop("_descrizioni"))
+        g["correzione"] = _join_distinct(g.pop("_correzioni"))
+        grav = [normalize_gravita(x) for x in g.pop("_gravita")]
+        peggiore = max(grav, key=lambda x: _GRAVITA_ORDINE.get(x, 0)) if grav else ""
+        if peggiore:
+            g["gravita"] = peggiore
+        else:
+            g.pop("gravita", None)  # nessuna gravità dichiarata: vale il default di compile_from_json
+        affid = list(dict.fromkeys(g.pop("_affidabilita")))
+        g["affidabilita"] = affid[0] if len(affid) == 1 else "Da controllare"
+        g["conflitto"] = "Sì" if any(str(c).strip().lower() in ("sì", "si", "yes", "true") for c in g.pop("_conflitti")) else "No"
+        out.append(g)
+    return out
 
 
 def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]) -> str:
@@ -753,8 +762,16 @@ def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]
         )
     }
 
+    # Raggruppamento a 0 token: le segnalazioni con lo stesso errore comune diventano una sola voce con più nodi.
+    segnalazioni = data.get("voci", [])
+    voci_raggruppate = group_voci(
+        segnalazioni, warn=lambda msg: print(f"[checker] AVVISO {msg}", file=sys.stderr)
+    )
+    print(f"[checker] Raggruppamento: {len(segnalazioni)} segnalazioni -> {len(voci_raggruppate)} voci "
+          f"({sum(len(v['nodi']) for v in voci_raggruppate)} nodi)", file=sys.stderr)
+
     voci_data = []
-    for idx, item in enumerate(data.get("voci", [])):
+    for idx, item in enumerate(voci_raggruppate):
         ref = item.get("riferimento") or item.get("ref", "")
         std = lookup_normative_entry(ref)
         v_id = item.get("id") or f"V-{idx+1:02d}"
@@ -788,11 +805,25 @@ def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]
         if std.get("level") and "(" not in ref:
             ref = f"WCAG {std['num']} ({std['level']})"
 
+        # Nodi della voce (componenti, istanze, nodi singoli): obbligatori, almeno uno.
+        nodi = normalize_nodi(
+            item.get("nodi") or [],
+            default_pagina=item.get("pagina", ""),
+            default_elemento=elem,
+            warn=lambda msg, _v=v_id: print(f"[checker] AVVISO {_v}: {msg}", file=sys.stderr),
+        )
+        if not nodi:
+            raise SystemExit(
+                f"[checker] ERRORE {v_id}: la voce non ha 'nodi'. Ogni voce deve elencare almeno un nodo "
+                f"{{\"id\", \"pagina\", \"tipo\"}} (tipo: Componente, Istanza, Nodo singolo)."
+            )
+        pagine = list(dict.fromkeys(n["pagina"] for n in nodi if n["pagina"]))
+
         voci_data.append({
             "id": v_id,
-            "pagina": item.get("pagina", ""),
+            "pagina": ", ".join(pagine),
             "elemento": elem,
-            "nodo_id": item.get("nodo_id") or item.get("node_id") or "",
+            "nodi": nodi,
             "ambito": ambito,
             "riferimento": ref,
             "descrizione": desc,
@@ -878,6 +909,22 @@ def main():
         print(f"Testo #767676 su #FFFFFF -> Ratio: {c1['ratio']}:1 | Conforme AA: {c1['compliant']} | Engine: {c1['engine']}")
         sugg = evaluate_suggerimento_annotazione("WCAG 2.4.6", "Pulsante ricerca solo-icona")
         print(f"Suggerimento Annotazione Figma per pulsante solo-icona -> {sugg}")
+
+        # Raggruppamento di esempio (dati inventati, nessun file letto o scritto)
+        esempio = [
+            {"elemento": "Bottone", "tipo_elemento": "pulsante", "riferimento": "WCAG 1.4.3 (AA)", "descrizione": "Contrasto insufficiente",
+             "misure": {"fg": "#888888", "bg": "#FFFFFF"}, "nodi": [{"id": "<id-componente>", "pagina": "Pagina A", "tipo": "Componente"}]},
+            {"elemento": "Bottone", "tipo_elemento": "pulsante", "riferimento": "WCAG 1.4.3 (AA)", "descrizione": "Contrasto insufficiente",
+             "misure": {"fg": "#888888", "bg": "#FFFFFF"}, "nodi": [{"id": "I<id-istanza>;<id-nodo>", "pagina": "Pagina B"}]},
+            {"elemento": "Bottone secondario", "tipo_elemento": "pulsante", "riferimento": "WCAG 1.4.3 (AA)", "descrizione": "Contrasto insufficiente",
+             "misure": {"fg": "#777777", "bg": "#EEEEEE"}, "nodi": [{"id": "<id-nodo-2>", "pagina": "Pagina A"}]},
+            {"elemento": "Foto", "tipo_elemento": "immagine-informativa", "riferimento": "WCAG 1.1.1 (A)", "descrizione": "Manca il testo alternativo",
+             "nodi": [{"id": "<id-nodo-3>", "pagina": "Pagina A"}]},
+        ]
+        gruppi = group_voci(esempio)
+        print(f"Raggruppamento di esempio: {len(esempio)} segnalazioni -> {len(gruppi)} voci (stessi colori uniti, colori diversi separati)")
+        for g in gruppi:
+            print(f"  {g['id']} {g['riferimento']}: nodi {[n['id'] + ' (' + n['tipo'] + ')' for n in g['nodi']]}")
         sys.exit(0)
 
     if args.input_json or args.stdin:

@@ -19,3 +19,6 @@ Le definizioni complete delle skill risiedono nella cartella comune `skills/`.
 5. **Cartella di output:** ogni report Excel va in `<nome file Figma>/` (creata da `checker.py`).
 6. **Copia locale:** prima della correzione suggerisci di salvare una copia locale del file Figma (consiglio, non bloccante).
 7. **Strumenti Figma:** solo gli elenchi chiusi delle skill; l'hook `skills/common/lib/figma_guard.py` blocca gli altri durante `/audit` e `/correzione`.
+8. **Regole universali:** nessuna regola, ID, nome o eccezione di un singolo file Figma nelle skill, negli script o nei moduli comuni.
+9. **Nodi:** una voce di `Voci` è un errore comune con più nodi (colonna D); il foglio `Nodi` ha una riga per coppia nodo-errore. `Da correggere` = Decisione `Accolta`/`Modificata` **e** Chi applica `Agente`/`Entrambi` (regola in `skills/common/lib/nodi_utils.py`).
+10. **Annotazioni:** il suggerimento della colonna P è un testo guida; non si compila mai il codice (i segnaposto `[...]` restano).

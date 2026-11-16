@@ -9,7 +9,19 @@ Skill per **Claude Code** che analizzano (audit) e correggono l'usabilità e l'a
 Claude, collegato a Figma tramite il connettore MCP ufficiale, esegue due skill in sequenza rispettando il principio **Human-in-the-Loop**:
 1. **`agente-audit`** (`/audit`): analizza usabilità (10 Euristiche di Nielsen) e accessibilità (W3C WCAG 2.2) e produce un report Excel strutturato. Sola lettura (`READ-ONLY`).
 2. **Revisione umana**: il progettista compila il Registro delle Decisioni nel foglio Excel (`Accolta`, `Modificata`, ecc.).
-3. **`agente-correzione`** (`/correzione`): interviene sui soli nodi approvati in Figma e compila il foglio `Log Correzioni` (`WRITE-BOUNDED`).
+3. **`agente-correzione`** (`/correzione`): interviene su **tutti i nodi** degli errori approvati (componenti, istanze e nodi singoli, in ogni pagina) e compila il foglio `Log Correzioni` (`WRITE-BOUNDED`).
+
+---
+
+## Nodi, errori comuni e "Da correggere"
+
+Le regole valgono per **qualsiasi file Figma**: nessuna skill, script o modulo contiene ID, nomi o regole di un progetto specifico.
+
+- **Una voce = un errore comune.** Il foglio `Voci` ha una riga per errore; in colonna D elenca tutti i nodi che lo condividono (uno per riga della cella). Il raggruppamento lo fa `checker.py` a 0 token: contrasto e dimensioni si uniscono solo con **misure identiche**; gli altri criteri solo con la stessa descrizione. Nel dubbio la voce si divide.
+- **Foglio `Nodi`:** una riga per ogni coppia nodo-errore, solo per i nodi con un errore. Colonne: ID nodo Figma, Pagina, Tipo (`Componente`, `Istanza`, `Nodo singolo`), Elemento, ID errore riferimento, Da correggere.
+- **Da correggere** è una formula: vale `Sì` solo se, nella voce collegata, la Decisione (col. R) è `Accolta` o `Modificata` **e** "Chi applica la correzione" (col. V) è `Agente` o `Entrambi`; altrimenti `No`. Non si compila a mano. `corrector.py` ricalcola la stessa regola da R e V.
+- **Ordine di correzione:** prima il componente, poi le istanze (si rileggono: se hanno ereditato la correzione non si riscrivono, se hanno un override si correggono), poi i nodi singoli. Una chiamata `use_figma` per voce.
+- **Annotazioni:** il suggerimento della colonna P è un testo guida con segnaposto tra parentesi quadre; la correzione lo riporta così com'è su ogni nodo, senza compilare il codice.
 
 ---
 
@@ -63,7 +75,8 @@ mcp-figma-audit-corrector-UXUI/
 │   │       ├── color_utils.py     # Contrasto, luminanza, modulazione colore HLS
 │   │       ├── wcag_checks.py     # check_contrast / check_target_size / measure (usate da checker e corrector)
 │   │       ├── normative.py       # Caricamento normativo da wcag.json
-│   │       ├── excel_utils.py     # Gestione OpenPyXL e fallback OpenXML
+│   │       ├── excel_utils.py     # Rilevamento di OpenPyXL (obbligatorio)
+│   │       ├── nodi_utils.py      # Nodi di una voce, ordine fisso e regola "Da correggere" (formula + Python)
 │   │       ├── figma_guard.py     # Hook: limita gli strumenti Figma per skill
 │   │       └── token_log.py       # Hook: registra i token reali in logs/
 │   ├── agente-audit/
@@ -90,9 +103,9 @@ La cartella `logs/` (log dei token) e la cartella `.venv/` sono locali e non ven
 | `skills/common/references/wcag.json` | Dati | Dataset normativo (86 criteri WCAG 2.2 + 10 Euristiche di Nielsen) |
 | `skills/common/lib/` | Libreria | Calcoli colore, caricamento normativo, gestione Excel, hook |
 | `skills/agente-audit/SKILL.md` | Skill | Regole di analisi UI/UX (`READ-ONLY`) |
-| `skills/agente-audit/scripts/checker.py` | Script | Contrasto, target size e scrittura del report Excel, senza token AI |
+| `skills/agente-audit/scripts/checker.py` | Script | Contrasto, target size, raggruppamento degli errori comuni e scrittura del report Excel (fogli `Voci` e `Nodi`), senza token AI |
 | `skills/agente-correzione/SKILL.md` | Skill | Regole di modifica mirata su Figma (`WRITE-BOUNDED`) |
-| `skills/agente-correzione/scripts/corrector.py` | Script | Righe approvate, calcolo correzioni colore/padding, Log Correzioni |
+| `skills/agente-correzione/scripts/corrector.py` | Script | Voci da correggere con tutti i loro nodi, calcolo correzioni colore/padding, Log Correzioni (una riga per ID errore) |
 
 ---
 
@@ -117,12 +130,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Gli script usano sempre l'interprete del progetto (`./.venv/bin/python`). Senza le dipendenze funzionano comunque con la sola libreria standard di Python, con un motore Excel di riserva.
+Gli script usano sempre l'interprete del progetto (`./.venv/bin/python`). `openpyxl` è **obbligatoria**: senza, `checker.py` e `corrector.py` si fermano con un messaggio chiaro (non esiste più un motore Excel di riserva). `wcag-contrast-ratio` è opzionale (senza, il contrasto si calcola con un metodo nativo equivalente); `colorbrew` non è installabile da PyPI ed è facoltativa.
 
 Test rapido:
 
 ```bash
-./.venv/bin/python skills/agente-audit/scripts/checker.py --demo
+./.venv/bin/python skills/agente-audit/scripts/checker.py --demo          # librerie, suggerimenti e raggruppamento di esempio
 ./.venv/bin/python skills/agente-correzione/scripts/corrector.py --demo   # solo formule; per il piano reale: --excel <report.xlsx> --plan
 ```
 

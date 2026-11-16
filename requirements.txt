@@ -1,4 +1,11 @@
-# Dipendenze opzionali consigliate per calcoli ad alta precisione e performance
-wcag-contrast-ratio>=0.9.0
-colorbrew>=0.1.0
+# OBBLIGATORIA: lettura e scrittura dei report Excel.
+# checker.py e corrector.py si fermano con un messaggio chiaro se manca (nessun motore di riserva).
 openpyxl>=3.1.0
+
+# OPZIONALE: calcolo del contrasto con libreria dedicata.
+# Senza, gli script usano un calcolo nativo equivalente (libreria standard di Python).
+wcag-contrast-ratio>=0.9.0
+
+# OPZIONALE e NON installabile da PyPI con le versioni di pip/Python testate ("No matching distribution"):
+# lasciata commentata perché farebbe fallire `pip install -r requirements.txt`. Il codice funziona senza.
+# colorbrew>=0.1.0
