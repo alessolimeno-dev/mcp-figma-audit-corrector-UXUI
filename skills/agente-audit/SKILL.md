@@ -101,12 +101,14 @@ Si usano **solo** questi strumenti del server MCP di Figma, nell'ordine indicato
 | 2 | `get_metadata` | Per avere la struttura delle pagine e dei frame (ID nodi, nomi, posizione e dimensioni). Costa poco: usalo per orientarti, scegliere i frame Desktop/Mobile e misurare i target (WCAG 2.5.5 / 2.5.8). |
 | 3 | `get_variable_defs` | Una volta per file: variabili e stili colore/testo. Serve a verificare la coerenza (Nielsen 4) e a capire se i colori usano i token. |
 | 4 | `get_design_context` | Solo sui nodi da approfondire (un frame o una sezione alla volta): colori, testi, font e layout per i calcoli di contrasto e dimensione testo. Non chiamarlo sull'intera pagina. |
-| 5 | `get_screenshot` | Solo quando serve un giudizio visivo (euristiche di Nielsen, gerarchia, leggibilità). È lo strumento che costa più token: al massimo uno per frame. |
+| 5 | `get_screenshot` | Per il giudizio visivo (euristiche di Nielsen, gerarchia, leggibilità) e per stabilire se le immagini sono decorative o informative (vedi 4.1). È lo strumento che costa più token: al massimo uno per frame. |
 
 Questo elenco è applicato anche dall'hook `skills/common/lib/figma_guard.py`, che blocca ogni altro strumento Figma mentre `/audit` è attivo.
 
 ### 4.1 Copertura e lettura: tutte le pagine, frame per frame
-- `get_metadata` **senza** `nodeId` elenca le pagine del file (costa poco). Dichiara in chat quali pagine e frame analizzerai (Desktop, Mobile, tutto il flusso).
+- `get_metadata` **senza** `nodeId` elenca le pagine del file (costa poco). A fine audit dichiara quali frame di pagina sono stati esclusi dalla lettura.
+- **Ordine di lettura fisso, in tre passi:** 1) leggi i componenti; 2) cerca le loro istanze nei frame; 3) leggi ogni frame di pagina elemento per elemento, compresi gli elementi che non sono né componenti né istanze (immagini, testi, forme), e segnala i difetti con `tipo: Nodo singolo`.
+- **Immagini:** per stabilire se un'immagine è decorativa o informativa fai uno `get_screenshot` del frame che la contiene e giudica dal contesto visivo; poi scegli `immagine-decorativa` o `immagine-informativa` in `tipo_elemento`.
 - Non chiamare `get_metadata` su una pagina intera: in un file reale supera il limite di token. Leggi **un frame di pagina o una sezione alla volta**. Ignora i nodi con `hidden="true"`.
 - Il metadata di un frame **non espande i figli delle istanze**. Per vedere cosa c'è dentro un'istanza (es. un footer), chiama `get_metadata` sull'ID di quell'istanza: i suoi figli hanno ID `I<istanza>;<nodo-nel-componente>`.
 - Ciò che riguarda un componente o un elemento ripetuto va cercato **in tutte le pagine analizzate**, non solo nella prima: la correzione verrà applicata solo ai nodi elencati in `nodi`, quindi un nodo non elencato non sarà mai corretto.
