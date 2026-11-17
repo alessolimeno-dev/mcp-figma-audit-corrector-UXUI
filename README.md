@@ -21,7 +21,7 @@ Le regole valgono per **qualsiasi file Figma**: nessuna skill, script o modulo c
 - **Foglio `Nodi`:** una riga per ogni coppia nodo-errore, solo per i nodi con un errore. Colonne: ID nodo Figma, Pagina, Tipo (`Componente`, `Istanza`, `Nodo singolo`), Elemento, ID errore riferimento, Da correggere.
 - **Da correggere** è una formula: vale `Sì` solo se, nella voce collegata, la Decisione (col. R) è `Accolta` o `Modificata` **e** "Chi applica la correzione" (col. V) è `Agente` o `Entrambi`; altrimenti `No`. Non si compila a mano. `corrector.py` ricalcola la stessa regola da R e V.
 - **Ordine di correzione:** prima il componente, poi le istanze (si rileggono: se hanno ereditato la correzione non si riscrivono, se hanno un override si correggono), poi i nodi singoli. Una chiamata `use_figma` per voce.
-- **Annotazioni:** il suggerimento della colonna P è un testo guida con segnaposto tra parentesi quadre; la correzione lo riporta così com'è su ogni nodo, senza compilare il codice.
+- **Annotazioni:** il suggerimento della colonna P è un testo guida con segnaposto tra parentesi quadre; la correzione lo riporta così com'è su ogni nodo, senza compilare il codice. L'annotazione si scrive con `labelMarkdown`, mai con `label` (Figma convertirebbe `<`, `>` e `"` in entità HTML).
 
 ---
 

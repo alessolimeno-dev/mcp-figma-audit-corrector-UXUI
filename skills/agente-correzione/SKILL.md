@@ -78,7 +78,7 @@ Si usano **solo** questi strumenti del server MCP di Figma. Qualunque altro stru
 | `get_variable_defs` | Per il Livello 1 di minima invasività: scegliere la variabile/stile conforme più vicino. |
 | `get_design_context` | Per leggere colori, padding e testi dei soli nodi del piano, prima e dopo la modifica. |
 | `get_screenshot` | Facoltativo: controllo visivo del nodo dopo la modifica. |
-| `use_figma` | **L'unico strumento che modifica il file.** Solo sui nodi delle voci da correggere, **una chiamata per voce con tutti i nodi dell'elenco**, con i valori del piano (`corrector.py --plan`): colore `suggerito_fg` / `figma_rgb_suggerito`, padding `padding_*_per_lato`, oppure l'annotazione. Non ricalcolare i valori a mano. Mai per creare, spostare o eliminare nodi non coinvolti. |
+| `use_figma` | **L'unico strumento che modifica il file.** Solo sui nodi delle voci da correggere, **una chiamata per voce con tutti i nodi dell'elenco**, con i valori del piano (`corrector.py --plan`): colore `suggerito_fg` / `figma_rgb_suggerito`, padding `padding_*_per_lato`, oppure l'annotazione (scritta con `{ labelMarkdown: testo }`, mai con `label`: vedi «Annotazioni Tecniche Figma»). Non ricalcolare i valori a mano. Mai per creare, spostare o eliminare nodi non coinvolti. |
 
 Questo elenco è applicato anche dall'hook `skills/common/lib/figma_guard.py`, che blocca ogni altro strumento Figma mentre `/correzione` è attivo.
 
@@ -89,7 +89,7 @@ I nodi di ogni voce arrivano dal piano già ordinati: **prima il componente, poi
    - Se ha **ereditato** la correzione (valore ora conforme) **non scrivere nulla**: azione `ereditato`.
    - Se ha un **override** e l'errore c'è ancora, correggila direttamente con lo stesso valore del piano: azione `override`.
    - Se il componente principale sta in una **libreria esterna** (non modificabile), correggi solo l'istanza come override: azione `libreria`.
-3. **Nodi singoli:** applica il valore del piano (azione `applicato`).
+3. **Nodi singoli:** applica il valore del piano (azione `applicato`). Per le voci con annotazione, su ogni nodo (componente, istanze, nodi singoli) scrivi l'annotazione con `labelMarkdown`, come descritto in «Annotazioni Tecniche Figma».
 4. Un nodo che non esiste più o non è modificabile: azione `non_trovato` (l'esito della voce sarà `Non risolto`).
 5. Fai restituire alla stessa chiamata, per ogni nodo, i valori riletti (`fg`/`bg` oppure `w`/`h`) e l'azione eseguita. Se il formato di ritorno non lo permette, rileggi i nodi con `get_design_context` / `get_metadata`. I valori servono per `--misure-post`.
 
@@ -101,6 +101,10 @@ I nodi di ogni voce arrivano dal piano già ordinati: **prima il componente, poi
 ### Annotazioni Tecniche Figma (testo guida, mai codice compilato)
 - Per difetti non correggibili visivamente su Figma (es. attributi ARIA, focus ring da tastiera, semantica HTML), inserisci un'**annotazione per gli sviluppatori su ogni nodo dell'elenco della voce** (componente, istanze e nodi singoli), non su uno solo.
 - Il testo dell'annotazione è **esattamente il suggerimento della colonna P** di quella voce, con i segnaposto tra parentesi quadre **lasciati così come sono**. Esempio, per un'immagine senza testo alternativo: *«per immagine informativa `<img alt="[descrizione funzione/contenuto]">`; se puramente decorativa `alt=""`»*. **Non inventare** né compilare il contenuto (alt, aria-label, ecc.): lo decidono progettista e sviluppatori. `corrector.py` ignora ogni override dell'annotazione nel Log.
+- **Come si scrive:** assegna all'annotazione `{ labelMarkdown: testo }` (con `testo` = suggerimento della colonna P, identico) e **mai** `label`.
+  - **Perché:** Figma converte in entità HTML i caratteri `<`, `>` e `"` scritti in `label` (`&lt;`, `&gt;`, `&quot;`) e lascia `labelMarkdown` vuoto: nell'interfaccia le entità restano visibili e il testo risulta storpiato (es. `&lt;img alt=&quot;...&quot;&gt;`). Scritto in `labelMarkdown`, il testo originale viene conservato e si legge correttamente.
+  - **Annotazione già presente:** se sul nodo esiste già un'annotazione con lo stesso testo, non duplicarla: **sostituiscila**. Le altre annotazioni del nodo vanno lasciate come sono, con tutte le loro proprietà (categoria compresa): riscrivi l'elenco delle annotazioni del nodo cambiando solo quella da inserire o sostituire.
+  - **Verifica dopo la scrittura:** rileggi `labelMarkdown` di ogni nodo e confrontalo con la colonna P **senza decodificare entità** (il testo deve coincidere carattere per carattere, segnaposto `[...]` compresi). Ignora `label`: Figma lo ricava da solo e lo restituisce sempre con `<` e `>` convertiti, quindi un confronto con `label` produce falsi «non trovato».
 
 ---
 
