@@ -1,5 +1,5 @@
 ---
-description: Esegue l'audit euristico e normativo (WCAG 2.2 + Nielsen) su un prototipo Figma ed esporta il report Excel
+description: Esegue l'audit euristico e normativo (WCAG 2.2 + Nielsen) su un prototipo Figma ed esporta il report Excel; con anche il file Excel esegue la verifica post-correzione
 ---
 
 # Comando Slash /audit
@@ -8,7 +8,8 @@ Puntatore alla skill comune: [skills/agente-audit/SKILL.md](../../skills/agente-
 
 ## Sintassi
 ```text
-/audit [link-figma]
+/audit [link-figma]                  # audit
+/audit [link-figma] [file-excel]     # verifica post-correzione (sezione 7 della skill)
 ```
 
 ## Istruzioni

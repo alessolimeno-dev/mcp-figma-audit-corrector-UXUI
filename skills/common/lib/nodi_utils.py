@@ -96,6 +96,20 @@ def normalize_nodi(
     return out
 
 
+def post_for_node(post_voce: Optional[Dict[str, Any]], node_id: str) -> Dict[str, Any]:
+    """
+    Valori riletti da Figma per un nodo (usata da corrector.py dopo la correzione e da checker.py --verifica).
+    `post_voce` può essere:
+      - {fg,bg | w,h [, azione, nota, annotazione]}  -> vale per tutti i nodi della voce;
+      - {<id nodo>: {fg,bg | w,h [, azione, nota, annotazione]}, ...} -> uno per nodo.
+    """
+    if not post_voce:
+        return {}
+    if any(k in post_voce for k in ("fg", "bg", "w", "h", "azione", "nota", "annotazione")):
+        return dict(post_voce)
+    return dict(post_voce.get(node_id) or {})
+
+
 def nodi_to_cell(nodi: List[Dict[str, str]]) -> str:
     """Contenuto della colonna D di `Voci`: un ID nodo per riga (il `;` non può fare da separatore: è dentro gli ID `I1:2;1:3`)."""
     return "\n".join(n["id"] for n in nodi)

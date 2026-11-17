@@ -66,6 +66,7 @@ try:
         TIPO_ISTANZA,
         da_correggere,
         normalize_nodi,
+        post_for_node,
     )
 except ImportError:
     from common.lib.color_utils import (  # type: ignore
@@ -100,6 +101,7 @@ except ImportError:
         TIPO_ISTANZA,
         da_correggere,
         normalize_nodi,
+        post_for_node,
     )
 
 MEASURABLE_REFS = ("1.4.3", "1.4.6", "1.4.11", "2.5.5", "2.5.8")
@@ -217,17 +219,7 @@ def format_plan(plan: List[Dict[str, Any]]) -> str:
 # ESITO PER NODO E PER VOCE
 # ==============================================================================
 
-def _post_for_node(post_voce: Optional[Dict[str, Any]], node_id: str) -> Dict[str, Any]:
-    """
-    Dati post-intervento di un nodo. `post_voce` può essere:
-      - {fg,bg | w,h [, azione, nota]}  -> vale per tutti i nodi della voce;
-      - {<id nodo>: {fg,bg | w,h [, azione, nota]}, ...} -> uno per nodo.
-    """
-    if not post_voce:
-        return {}
-    if any(k in post_voce for k in ("fg", "bg", "w", "h", "azione", "nota")):
-        return dict(post_voce)
-    return dict(post_voce.get(node_id) or {})
+_post_for_node = post_for_node  # definita in common/lib/nodi_utils.py (condivisa con checker.py --verifica)
 
 
 def _node_outcome(

@@ -65,11 +65,17 @@ try:
         check_contrast,
         check_target_size,
         measure,
+        parse_measures_from_text,
     )
     from skills.common.lib.nodi_utils import (
         normalize_nodi,
         nodi_to_cell,
         formula_da_correggere,
+        post_for_node,
+        DECISIONI_APPROVATE,
+        MAX_RIGHE_VOCI,
+        COL_VOCI_DECISIONE,
+        COL_VOCI_CHI_APPLICA,
     )
 except ImportError:
     from common.lib.color_utils import (  # type: ignore
@@ -98,11 +104,17 @@ except ImportError:
         check_contrast,
         check_target_size,
         measure,
+        parse_measures_from_text,
     )
     from common.lib.nodi_utils import (  # type: ignore
         normalize_nodi,
         nodi_to_cell,
         formula_da_correggere,
+        post_for_node,
+        DECISIONI_APPROVATE,
+        MAX_RIGHE_VOCI,
+        COL_VOCI_DECISIONE,
+        COL_VOCI_CHI_APPLICA,
     )
 
 _load_wcag_library = load_wcag_library
@@ -427,6 +439,29 @@ def calculate_riepilogo_stats(voci: List[Dict[str, Any]], session_data: Optional
     return stats
 
 
+COL_VOCI_TIPO_MOTIVO = "T"
+
+
+def riepilogo_formule_corrette() -> Dict[str, str]:
+    """
+    Formule del foglio Riepilogo (conteggi di Decisione, Tipo di motivo, Chi applica) con l'intervallo di Voci.
+    Nel template Audit_modello.xlsx sono scritte senza intervallo (`COUNTIF(Voci!:,A26)`) e non funzionano:
+    qui si riscrivono sempre. Righe: 26-28 Decisione, 32-36 Rifiutate per tipo di motivo, 40-42 Chi applica.
+    """
+    n = MAX_RIGHE_VOCI
+    dec = f"Voci!${COL_VOCI_DECISIONE}$2:${COL_VOCI_DECISIONE}${n}"
+    tipo = f"Voci!${COL_VOCI_TIPO_MOTIVO}$2:${COL_VOCI_TIPO_MOTIVO}${n}"
+    chi = f"Voci!${COL_VOCI_CHI_APPLICA}$2:${COL_VOCI_CHI_APPLICA}${n}"
+    f: Dict[str, str] = {}
+    for r in (26, 27, 28):
+        f[f"B{r}"] = f"=COUNTIF({dec},A{r})"
+    for r in range(32, 37):
+        f[f"B{r}"] = f'=COUNTIFS({dec},"Rifiutata",{tipo},A{r})'
+    for r in (40, 41, 42):
+        f[f"B{r}"] = f"=COUNTIF({chi},A{r})"
+    return f
+
+
 def _inject_cached_values(xlsx_path: str, sheet_cache: Dict[str, Dict[str, Any]]):
     """Inietta i valori pre-calcolati da Python direttamente nel pacchetto XML OpenXML (.xlsx)."""
     ns = {'ns': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
@@ -600,6 +635,8 @@ def compile_audit_report(
 
     for coord, val in stats.items():
         s_riep[coord] = val
+    for coord, formula in riepilogo_formule_corrette().items():  # il template ha le formule senza intervallo (Voci!:)
+        s_riep[coord] = formula
 
     wb.save(output_path)
     _inject_cached_values(output_path, {'Riepilogo': stats})
@@ -861,6 +898,461 @@ def compile_from_json(template_path: str, output_path: str, data: Dict[str, Any]
     return compile_audit_report(template_path, output_path, session_data, voci_data, corretto_data)
 
 
+# ==============================================================================
+# VERIFICA POST-CORREZIONE  (/audit [link-figma] [file-excel])
+# Sola lettura su Figma. Claude rilegge i nodi e scrive solo un piccolo JSON di misure; confronto, esiti,
+# testo della colonna "Differenza", fogli Verifica / Riepilogo / Sessione li scrive lo script (0 token).
+# ==============================================================================
+PREFISSO_NUOVE = "N"          # ID delle voci nuove: N-01, N-02, ... (le voci del primo audit restano V-xx)
+_VC = {"id": 1, "pagina": 2, "elemento": 3, "ambito": 5, "rif": 6, "desc": 7, "grav": 8, "stato": 9, "aff": 10,
+       "confl": 12, "corr": 14, "dove": 15, "sugg": 16, "dec": 18, "tipo_mot": 20, "chi": 22}
+_LOG_OK = ("Risolto", "Annotato")   # esiti del Log Correzioni che escludono una "non risolta": se poi la misura è KO è una regressione
+ESITI_VERIFICA = ("Confermata", "Regressione", "Non risolta", "Da verificare", "Non toccata", "Nuova")
+_AMBITI = ("Usabilità", "Accessibilità")
+_GRAVITA_COL = ("Lieve", "Moderata", "Grave", "Bloccante")
+
+
+def _cella(ws, r: int, c: int) -> str:
+    return str(ws.cell(r, c).value or "").strip()
+
+
+def _approvata(decisione: Any) -> bool:
+    """Una voce si rilegge se la decisione è Accolta/Modificata, a prescindere da chi applica (Agente, Entrambi, Progettista)."""
+    return str(decisione or "").strip().lower() in {d.lower() for d in DECISIONI_APPROVATE}
+
+
+def _norm_rif(ref: Any) -> str:
+    return re.sub(r"\s*\(.*?\)", "", str(ref or "")).strip().lower()
+
+
+def _n(x: Any) -> str:
+    f = float(x)
+    return str(int(f)) if f == int(f) else f"{f:g}"
+
+
+def _breve(m: Optional[Dict[str, Any]]) -> str:
+    if not m:
+        return ""
+    return f"{m['ratio']}:1" if m["kind"] == "contrasto" else f"{_n(m['w'])}x{_n(m['h'])} px"
+
+
+def _peggiore(ms: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return min(ms, key=lambda m: m["ratio"] if m["kind"] == "contrasto" else min(m["w"], m["h"]))
+
+
+def leggi_report_verifica(excel_path: str) -> Dict[str, Any]:
+    """Legge Voci, Nodi, Log Correzioni e Sessione del report (solo lettura, valori già calcolati)."""
+    if not HAS_OPENPYXL:
+        raise SystemExit("[checker] ERRORE: openpyxl non è installato. Usa <ROOT>/.venv/bin/python.")
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    for nome in ("Voci", "Nodi"):
+        if nome not in wb.sheetnames:
+            raise SystemExit(f"[checker] ERRORE: foglio '{nome}' non trovato in {excel_path}: serve un report generato da /audit.")
+    wn = wb["Nodi"]
+    nodi: Dict[str, List[Dict[str, str]]] = {}
+    for r in range(2, wn.max_row + 1):
+        nid, vid = _cella(wn, r, 1), _cella(wn, r, 5)
+        if nid and vid:
+            nodi.setdefault(vid, []).append({"id": nid, "pagina": _cella(wn, r, 2), "tipo": _cella(wn, r, 3),
+                                             "elemento": _cella(wn, r, 4)})
+    ws = wb["Voci"]
+    voci: List[Dict[str, Any]] = []
+    for r in range(2, ws.max_row + 1):
+        vid = _cella(ws, r, _VC["id"])
+        if not vid:
+            continue
+        v = {k: _cella(ws, r, c) for k, c in _VC.items()}
+        v.update(
+            id=vid, row=r, decisione=v.pop("dec"), chi=v.pop("chi"), tipo_motivo=v.pop("tipo_mot"),
+            riferimento=v.pop("rif"), descrizione=v.pop("desc"), gravita=normalize_gravita(v.pop("grav")),
+            nodi=normalize_nodi(nodi.get(vid, [])),
+        )
+        voci.append(v)
+    log: Dict[str, Dict[str, str]] = {}
+    if "Log Correzioni" in wb.sheetnames:
+        wl = wb["Log Correzioni"]
+        for r in range(2, wl.max_row + 1):
+            vid = _cella(wl, r, 1)
+            if vid:
+                log[vid] = {"azione": _cella(wl, r, 6), "esito": _cella(wl, r, 8), "verifica": _cella(wl, r, 9)}
+    sess = wb["Sessione"] if "Sessione" in wb.sheetnames else None
+    sessione = {"file_figma": _cella(sess, 5, 2) if sess else "", "caso": _cella(sess, 4, 2) if sess else ""}
+    return {"voci": voci, "log": log, "sessione": sessione}
+
+
+def piano_verifica(voci: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """(da rileggere, non toccate): non si rilegge solo ciò che il progettista ha rifiutato o lasciato senza decisione."""
+    return [v for v in voci if _approvata(v["decisione"])], [v for v in voci if not _approvata(v["decisione"])]
+
+
+def formatta_piano_verifica(da_leggere: List[Dict[str, Any]], non_toccate: List[Dict[str, Any]], log: Dict[str, Dict[str, str]]) -> str:
+    righe = [f"Voci da rileggere su Figma: {len(da_leggere)} | non toccate (rifiutate o senza decisione, non rilette): {len(non_toccate)}"]
+    pagine: List[str] = []
+    for v in da_leggere:
+        ref = v["riferimento"]
+        esito_log = log.get(v["id"], {}).get("esito") or "nessuna riga nel Log"
+        testa = f"{v['id']} [{ref}] {v['elemento']} - Log: {esito_log} - Chi applica: {v['chi'] or '-'}"
+        if _is_misurabile(ref):
+            cosa = "fg e bg (hex)" if "1.4." in ref else "w e h (px)"
+            nodi = ", ".join(f"{n['id']} ({n['tipo']})" for n in v["nodi"]) or "(nessun nodo nel foglio Nodi)"
+            righe.append(f"{testa}\n    leggere {cosa} di: {nodi}")
+        else:  # annotazioni e criteri non misurabili: elenco compatto (gli ID dei nodi sono nel foglio Nodi)
+            righe.append(f"{testa}\n    {len(v['nodi'])} nodi: annotazione (labelMarkdown) da rileggere solo se uno strumento di lettura la restituisce; "
+                         "altrimenti lasciare vuoto (esito Da verificare)")
+        pagine += [n["pagina"] for n in v["nodi"] if n["pagina"]]
+    if non_toccate:
+        righe.append("Non toccate: " + ", ".join(f"{v['id']} ({v['decisione'] or 'senza decisione'})" for v in non_toccate))
+    if pagine:
+        righe.append("Pagine con nodi da rileggere (facoltativo: get_metadata dei frame per vedere se il layout è cambiato): "
+                     + ", ".join(dict.fromkeys(pagine)))
+    return "\n".join(righe)
+
+
+def scheletro_misure_post(da_leggere: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Modello di misure-post.json con tutti i nodi da rileggere: Claude compila solo i valori (campi vuoti = non letto)."""
+    out: Dict[str, Any] = {}
+    for v in da_leggere:
+        ref = v["riferimento"]
+        if _is_misurabile(ref):
+            campi = {"fg": "", "bg": ""} if "1.4." in ref else {"w": "", "h": ""}
+            out[v["id"]] = {n["id"]: dict(campi) for n in v["nodi"]}
+        else:
+            # un solo campo per voce: vale per tutti i nodi (compilarlo solo se l'annotazione è stata riletta su tutti)
+            out[v["id"]] = {"annotazione": ""}
+    return out
+
+
+def _misura_dal_log(ref: str, log_row: Optional[Dict[str, str]]) -> Optional[Dict[str, Any]]:
+    for riga in str((log_row or {}).get("verifica", "")).splitlines():
+        if "Misurato dopo" in riga:
+            p = parse_measures_from_text(riga, ref)
+            return measure(ref, p) if p else None
+    return None
+
+
+def valuta_voce(v: Dict[str, Any], post_voce: Optional[Dict[str, Any]], log_row: Optional[Dict[str, str]]) -> Dict[str, str]:
+    """Esito della verifica di una voce approvata, calcolato dalle misure rilette (mai da testo scritto dal modello)."""
+    ref = v["riferimento"]
+    misurabile = _is_misurabile(ref)
+    prima = parse_measures_from_text(v["descrizione"], ref) if misurabile else None
+    stati: List[Tuple[Dict[str, str], str, Optional[Dict[str, Any]]]] = []
+    for n in v["nodi"]:
+        p = post_for_node(post_voce, n["id"])
+        res = None
+        if p.get("azione") == "non_trovato":
+            stato = "non_trovato"
+        elif misurabile:
+            m = {k: p[k] for k in ("fg", "bg", "w", "h", "min") if p.get(k) not in (None, "")}
+            if m:
+                merged = dict(prima or {})
+                merged.update(m)
+                res = measure(ref, merged)
+            stato = ("ok" if res["compliant"] else "ko") if res else "nd"
+        else:
+            testo = str(p.get("annotazione") or "").strip()
+            stato = ("ok" if testo == v["sugg"].strip() else "ko") if testo else "nd"
+        stati.append((n, stato, res))
+
+    ko = [(n, r) for n, s, r in stati if s in ("ko", "non_trovato")]
+    nd = [n for n, s, _ in stati if s == "nd"]
+    ok = [(n, r) for n, s, r in stati if s == "ok"]
+    log_esito = (log_row or {}).get("esito", "")
+    if ko:
+        esito = "Regressione" if log_esito in _LOG_OK else "Non risolta"
+    elif nd:
+        esito = "Da verificare"
+    else:
+        esito = "Confermata"
+
+    # Colonna Differenza
+    if misurabile:
+        misure_ora = [r for _, s, r in stati if r]
+        parti = []
+        if prima:
+            pm = measure(ref, prima)
+            parti.append(f"Audit {_breve(pm)}") if pm else None
+        lm = _misura_dal_log(ref, log_row)
+        if lm:
+            parti.append(f"Correzione {_breve(lm)}")
+        if misure_ora:
+            tot = len(misure_ora)
+            parti.append(f"Ora {_breve(_peggiore(misure_ora))}" + (f" (peggiore di {tot} nodi)" if tot > 1 else ""))
+        diff = " → ".join(parti) if parti else "Nessuna misura disponibile"
+        dettagli = []
+        for n, r in ko:
+            dettagli.append(f"{n['id']} ({_breve(r)})" if r else f"{n['id']} (nodo non trovato)")
+        if dettagli:
+            diff += f" | {len(ko)}/{len(v['nodi'])} nodi non conformi: " + ", ".join(dettagli[:3]) + (" …" if len(dettagli) > 3 else "")
+        if nd:
+            diff += f" | {len(nd)} nodi non rilevati: " + ", ".join(n["id"] for n in nd[:3]) + (" …" if len(nd) > 3 else "")
+    else:
+        if ko:
+            diff = "Annotazione diversa dalla colonna P o nodo non trovato su: " + ", ".join(n["id"] for n, _ in ko[:3])
+        elif nd and not ok:
+            diff = "Annotazione non riletta (sola lettura): vale l'esito del Log" + (f" ({log_esito})" if log_esito else "")
+        elif nd:
+            diff = f"Annotazione coincide con la colonna P su {len(ok)} nodi; {len(nd)} non riletti"
+        else:
+            diff = f"Annotazione coincide con la colonna P su {len(ok)} {'nodo' if len(ok) == 1 else 'nodi'}"
+
+    esito_corr = log_esito or ("Non nel Log (progettista)" if v["chi"].lower() == "progettista" else "Non nel Log")
+    return {"esito": esito, "regressione": "Sì" if esito == "Regressione" else "No", "differenza": diff, "esito_correzione": esito_corr}
+
+
+def prepara_voci_nuove(payload: Any, voci_note: List[Dict[str, Any]], warn=None) -> List[Dict[str, Any]]:
+    """
+    Voci nuove da un payload nel formato dell'audit ({"voci": [...]}): si raggruppano come nell'audit, si scartano i nodi
+    già noti (stessa coppia nodo + criterio presente in Voci) e le rimaste prendono ID N-01, N-02, ...
+    """
+    warn = warn or (lambda _m: None)
+    if isinstance(payload, list):
+        payload = {"voci": payload}
+    noti = {(n["id"], _norm_rif(v["riferimento"])) for v in voci_note for n in v["nodi"]}
+    out: List[Dict[str, Any]] = []
+    scartate = 0
+    for g in group_voci((payload or {}).get("voci", []), warn=warn):
+        ref = g.get("riferimento") or g.get("ref", "")
+        std = lookup_normative_entry(ref)
+        if std.get("level") and "(" not in ref:
+            ref = f"WCAG {std['num']} ({std['level']})"
+        nuovi = [n for n in g["nodi"] if (n["id"], _norm_rif(ref)) not in noti]
+        if not nuovi:
+            scartate += 1
+            continue
+        meas = apply_measurements(dict(g), is_violation=True)
+        desc = meas["descrizione"] if meas else (g.get("descrizione") or std.get("nome", ""))
+        out.append({
+            "riferimento": ref, "elemento": g.get("elemento", ""), "descrizione": desc, "nodi": nuovi,
+            "ambito": g.get("ambito") or std.get("ambito") or evaluate_ambito(ref),
+            "gravita": normalize_gravita(g.get("gravita") or "Moderata"),
+        })
+    for i, g in enumerate(out, start=1):
+        g["id"] = f"{PREFISSO_NUOVE}-{i:02d}"
+    if scartate:
+        print(f"[checker] {scartate} segnalazioni del nuovo audit erano già nel report (stesso nodo e criterio): ignorate.", file=sys.stderr)
+    return out
+
+
+def _clona_foglio(src, dst) -> None:
+    """Copia valori, stili, larghezze e celle unite di un foglio in un altro foglio (anche di un altro file)."""
+    for row in src.iter_rows():
+        for c in row:
+            d = dst.cell(c.row, c.column, c.value)
+            if c.has_style:
+                d.font, d.border, d.fill = copy.copy(c.font), copy.copy(c.border), copy.copy(c.fill)
+                d.number_format, d.protection, d.alignment = c.number_format, copy.copy(c.protection), copy.copy(c.alignment)
+    for k, dim in src.column_dimensions.items():
+        dst.column_dimensions[k].width = dim.width
+    for k, dim in src.row_dimensions.items():
+        if dim.height:
+            dst.row_dimensions[k].height = dim.height
+    for rng in src.merged_cells.ranges:
+        dst.merge_cells(str(rng))
+
+
+def _scrivi_riepilogo(wb, template_path: str, voci: List[Dict[str, Any]], righe: List[Dict[str, str]]) -> Dict[str, Any]:
+    """Rigenera il foglio Riepilogo dal template (matrice del primo audit, calcolata da Voci) e aggiunge il blocco
+    'A correzione effettuata' a destra (colonne H-O). Ritorna i valori da iniettare nelle formule (cache)."""
+    pos = wb.sheetnames.index("Riepilogo") if "Riepilogo" in wb.sheetnames else len(wb.sheetnames)
+    if "Riepilogo" in wb.sheetnames:
+        wb.remove(wb["Riepilogo"])
+    ws = wb.create_sheet("Riepilogo", pos)
+    _clona_foglio(openpyxl.load_workbook(template_path)["Riepilogo"], ws)
+
+    items = [{
+        "id": v["id"], "riferimento": v["riferimento"], "elemento": v["elemento"], "descrizione": v["descrizione"],
+        "correzione": v["corr"], "ambito": v["ambito"], "gravita": v["gravita"], "stato": v["stato"],
+        "dove_si_corregge": v["dove"], "suggerimento_annotazione": v["sugg"], "affidabilita": v["aff"], "conflitto": v["confl"],
+    } for v in voci]
+    for i in items:
+        i["ambito"] = i["ambito"] or evaluate_ambito(i["riferimento"])
+    for coord, val in calculate_riepilogo_stats(items).items():
+        ws[coord] = val
+    for c, t in zip("BCDEF", ("Lieve", "Moderata", "Grave", "Bloccante", "Totale")):
+        ws[f"{c}3"] = t
+    for coord, formula in riepilogo_formule_corrette().items():
+        ws[coord] = formula
+
+    # --- blocco "A correzione effettuata"
+    st_head, st_lab, st_val = (copy.copy(ws[x]._style) for x in ("A3", "A4", "B4"))
+    wrap = openpyxl.styles.Alignment(wrap_text=True, vertical="top")
+
+    def put(coord: str, val: Any, st: Any) -> None:
+        ws[coord].value = val
+        ws[coord]._style = copy.copy(st)
+        if st is st_val:
+            ws[coord].alignment = wrap
+
+    def fmt(ids: List[str]) -> str:
+        return f"{', '.join(ids)} ({len(ids)})" if ids else "- (0)"
+
+    per_amb: Dict[Tuple[str, str], List[str]] = {}
+    aperte: Dict[Tuple[str, str], List[str]] = {}
+    for r in righe:
+        per_amb.setdefault((r["ambito"], r["esito"]), []).append(r["id"])
+        if r["esito"] != "Confermata":
+            aperte.setdefault((r["ambito"], r["gravita"]), []).append(r["id"])
+
+    put("H3", "A correzione effettuata (verifica post-correzione)", st_head)
+    for col, t in zip("HIJKLMNO", ("Ambito",) + ESITI_VERIFICA + ("Totale",)):
+        put(f"{col}4", t, st_head)
+    for i, amb in enumerate(_AMBITI, start=5):
+        put(f"H{i}", amb, st_lab)
+        for col, esito in zip("IJKLMN", ESITI_VERIFICA):
+            put(f"{col}{i}", fmt(per_amb.get((amb, esito), [])), st_val)
+        put(f"O{i}", sum(len(per_amb.get((amb, e), [])) for e in ESITI_VERIFICA), st_val)
+    put("H7", "Totale", st_lab)
+    for col, esito in zip("IJKLMN", ESITI_VERIFICA):
+        put(f"{col}7", fmt([x for a in _AMBITI for x in per_amb.get((a, esito), [])]), st_val)
+    put("O7", len(righe), st_val)
+
+    put("H9", "Voci non confermate (ancora aperte) per gravità", st_head)
+    for col, t in zip("HIJKLM", ("Ambito",) + _GRAVITA_COL + ("Totale",)):
+        put(f"{col}10", t, st_head)
+    for i, amb in enumerate(_AMBITI, start=11):
+        put(f"H{i}", amb, st_lab)
+        for col, g in zip("IJKL", _GRAVITA_COL):
+            put(f"{col}{i}", fmt(aperte.get((amb, g), [])), st_val)
+        put(f"M{i}", sum(len(aperte.get((amb, g), [])) for g in _GRAVITA_COL), st_val)
+    put("H13", "Totale", st_lab)
+    for col, g in zip("IJKL", _GRAVITA_COL):
+        put(f"{col}13", fmt([x for a in _AMBITI for x in aperte.get((a, g), [])]), st_val)
+    put("M13", sum(len(x) for x in aperte.values()), st_val)
+    put("H15", "Ancora aperte = tutte le voci tranne le Confermate (Regressioni, Non risolte, Da verificare, Non toccate, Nuove). "
+               "Regressione = la correzione risultava riuscita nel Log ma ora la misura non è conforme.", st_lab)
+    ws["H15"].alignment = wrap
+    ws.merge_cells("H15:O16")
+    for col, w in zip("HIJKLMNO", (16, 24, 24, 24, 24, 24, 24, 10)):
+        ws.column_dimensions[col].width = w
+
+    # cache dei valori delle formule (conteggi di Decisione, Tipo di motivo, Chi applica)
+    cache: Dict[str, int] = {}
+    low = lambda s: str(s or "").strip().lower()
+    for r in (26, 27, 28):
+        cache[f"B{r}"] = sum(1 for v in voci if low(v["decisione"]) == low(ws[f"A{r}"].value))
+    for r in range(32, 37):
+        cache[f"B{r}"] = sum(1 for v in voci if low(v["decisione"]) == "rifiutata" and low(v["tipo_motivo"]) == low(ws[f"A{r}"].value))
+    for r in (40, 41, 42):
+        cache[f"B{r}"] = sum(1 for v in voci if low(v["chi"]) == low(ws[f"A{r}"].value))
+    return cache
+
+
+def verifica_report(
+    excel_path: str,
+    out_path: str,
+    template_path: str,
+    post: Optional[Dict[str, Any]] = None,
+    nuove: Any = None,
+) -> Dict[str, Any]:
+    """Confronta il report con la rilettura di Figma e scrive la copia '-verifica.xlsx' (Log Correzioni in sola lettura)."""
+    rep = leggi_report_verifica(excel_path)
+    voci, log = rep["voci"], rep["log"]
+    da_leggere, _ = piano_verifica(voci)
+    ids_da_leggere = {v["id"] for v in da_leggere}
+    post = post or {}
+    if not post and da_leggere:
+        print("[checker] AVVISO: nessuna misura rilette (--misure-post mancante o vuoto): le voci approvate risultano 'Da verificare'.",
+              file=sys.stderr)
+
+    righe: List[Dict[str, str]] = []
+    for v in voci:
+        ambito = v["ambito"] or evaluate_ambito(v["riferimento"])
+        if v["id"] in ids_da_leggere:
+            r = valuta_voce(v, post.get(v["id"]), log.get(v["id"]))
+        else:
+            motivo = "Voce rifiutata" if v["decisione"].lower() == "rifiutata" else "Voce senza decisione"
+            r = {"esito": "Non toccata", "regressione": "No", "esito_correzione": "Nessuna",
+                 "differenza": f"{motivo}: nessuna correzione richiesta, errore invariato (non riletto su Figma)."}
+        righe.append(dict(r, id=v["id"], ambito=ambito, riferimento=v["riferimento"], gravita=v["gravita"], elemento=v["elemento"]))
+
+    nuove_voci = prepara_voci_nuove(nuove, voci, warn=lambda m: print(f"[checker] AVVISO {m}", file=sys.stderr)) if nuove else []
+    righe_nuove = [{
+        "id": g["id"], "ambito": g["ambito"], "riferimento": g["riferimento"], "gravita": g["gravita"], "elemento": g["elemento"],
+        "esito_correzione": "-", "esito": "Nuova", "regressione": "No",
+        "differenza": g["descrizione"] + f" | {len(g['nodi'])} nodi: " + ", ".join(n["id"] for n in g["nodi"][:3]) + (" …" if len(g["nodi"]) > 3 else ""),
+    } for g in nuove_voci]
+    tutte = righe_nuove + righe   # le nuove (N-xx) in cima, poi le V-xx nell'ordine del primo audit
+
+    wb = openpyxl.load_workbook(excel_path)
+    # Sessione: versione di verifica e data (la riga v0 resta)
+    if "Sessione" in wb.sheetnames:
+        s = wb["Sessione"]
+        for r, (lab, val) in zip((14, 15), (("Verifica post-correzione", "v1 (post-correzione)"),
+                                            ("Data e ora della verifica", datetime.now().isoformat(timespec="seconds")))):
+            s.cell(r, 1, lab)
+            s.cell(r, 2, val)
+            for c in (1, 2):
+                s.cell(r, c)._style = copy.copy(s.cell(13, c)._style)
+    # Foglio Verifica (ricreato a ogni esecuzione)
+    if "Verifica" in wb.sheetnames:
+        wb.remove(wb["Verifica"])
+    wv = wb.create_sheet("Verifica")
+    head = ["ID", "Ambito", "Normativa di riferimento", "Gravità", "Elemento", "Esito correzione (dal Log)",
+            "Esito verifica", "Regressione", "Differenza"]
+    wv.append(head)
+    st_head = copy.copy(wb["Voci"].cell(1, 1)._style)
+    for c in wv[1]:
+        c._style = copy.copy(st_head)
+        c.alignment = openpyxl.styles.Alignment(wrap_text=True, vertical="center")
+    wrap = openpyxl.styles.Alignment(wrap_text=True, vertical="top")
+    fill = {"Regressione": "F4B6B6", "Non risolta": "F8CBAD", "Nuova": "FFE699", "Da verificare": "DDEBF7", "Confermata": "C6E0B4"}
+    for r in tutte:
+        wv.append([r["id"], r["ambito"], r["riferimento"], r["gravita"], r["elemento"], r["esito_correzione"],
+                   r["esito"], r["regressione"], r["differenza"]])
+        for c in wv[wv.max_row]:
+            c.alignment = wrap
+        if r["esito"] in fill:
+            wv.cell(wv.max_row, 7).fill = openpyxl.styles.PatternFill("solid", fgColor=fill[r["esito"]])
+        if r["regressione"] == "Sì":
+            wv.cell(wv.max_row, 8).fill = openpyxl.styles.PatternFill("solid", fgColor=fill["Regressione"])
+    for col, w in zip("ABCDEFGHI", (8, 15, 22, 12, 36, 22, 16, 13, 80)):
+        wv.column_dimensions[col].width = w
+    wv.freeze_panes = "A2"
+    wv.auto_filter.ref = f"A1:I{wv.max_row}"
+
+    # Riepilogo: matrice del primo audit (da Voci) + blocco "A correzione effettuata"
+    cache = _scrivi_riepilogo(wb, template_path, voci, tutte)
+    wb.calculation.fullCalcOnLoad = True
+    wb.save(out_path)
+    _inject_cached_values(out_path, {"Riepilogo": cache})
+
+    conteggi = {e: sum(1 for r in tutte if r["esito"] == e) for e in ESITI_VERIFICA}
+    return {"out": out_path, "conteggi": conteggi, "righe": tutte}
+
+
+def main_verifica(args, template_file: str) -> int:
+    rep = leggi_report_verifica(args.excel)
+    da_leggere, non_toccate = piano_verifica(rep["voci"])
+    if args.plan:
+        print(formatta_piano_verifica(da_leggere, non_toccate, rep["log"]))
+        if args.plan_out:
+            with open(args.plan_out, "w", encoding="utf-8") as f:
+                json.dump(scheletro_misure_post(da_leggere), f, ensure_ascii=False, indent=1)
+            print(f"\nModello delle misure da compilare: {args.plan_out}")
+        return 0
+    post, nuove = {}, None
+    if args.misure_post:
+        with open(args.misure_post, "r", encoding="utf-8") as f:
+            post = json.load(f)
+    if args.nuove:
+        with open(args.nuove, "r", encoding="utf-8") as f:
+            nuove = json.load(f)
+    if args.out:
+        out = args.out if os.path.dirname(args.out) else os.path.join(os.path.dirname(os.path.abspath(args.excel)), args.out)
+    else:
+        nome = figma_folder_name(rep["sessione"])
+        out = os.path.join(os.path.dirname(os.path.abspath(args.excel)), f"{nome}-{datetime.now().strftime('%Y-%m-%d')}-verifica.xlsx")
+    if os.path.abspath(out) == os.path.abspath(args.excel):
+        raise SystemExit("[checker] ERRORE: --out coincide con il report di partenza: la verifica scrive sempre una copia.")
+    res = verifica_report(args.excel, out, template_file, post, nuove)
+    print(f"Verifica post-correzione scritta: {res['out']}")
+    print("Esiti: " + ", ".join(f"{e} {n}" for e, n in res["conteggi"].items()))
+    for r in res["righe"]:
+        if r["esito"] in ("Regressione", "Non risolta", "Nuova"):
+            print(f"  ATTENZIONE {r['id']} [{r['riferimento']}] {r['esito']}: {r['differenza']}")
+    return 0
+
+
 def figma_folder_name(session: Dict[str, Any]) -> str:
     """Nome cartella di output = nome del file Figma analizzato (caratteri non validi rimossi)."""
     name = str(session.get("file_figma") or session.get("caso") or "Figma senza nome").strip()
@@ -898,8 +1390,26 @@ def main():
     parser.add_argument("--out-root", help="Cartella base in cui creare la cartella con il nome del Figma (default: cartella corrente)")
     parser.add_argument("--input-json", help="Percorso file JSON contenente {session, voci, corretto}")
     parser.add_argument("--stdin", action="store_true", help="Legge il payload JSON dallo standard input")
+    # Verifica post-correzione (/audit [link] [file-excel])
+    parser.add_argument("--verifica", action="store_true",
+                        help="Verifica post-correzione: confronta il report Excel (--excel) con le misure rilette da Figma e scrive una copia '-verifica.xlsx'")
+    parser.add_argument("--excel", help="Con --verifica: report Excel con decisioni e Log Correzioni (non viene modificato)")
+    parser.add_argument("--plan", action="store_true", help="Con --verifica: elenca i nodi da rileggere su Figma, senza scrivere nulla")
+    parser.add_argument("--plan-out", help="Con --verifica --plan: salva il modello di misure-post.json da compilare")
+    parser.add_argument("--misure-post", help="Con --verifica: JSON {ID voce: {ID nodo: {fg,bg | w,h | annotazione}}} con i valori riletti da Figma")
+    parser.add_argument("--nuove", help="Con --verifica: JSON {voci:[...]} nel formato dell'audit con gli errori nuovi trovati (ID N-01, N-02, ...)")
 
     args = parser.parse_args()
+
+    if args.verifica:
+        if not args.excel:
+            parser.error("--verifica richiede --excel <report.xlsx>")
+        template_file = args.template
+        if not os.path.exists(template_file):
+            alt_template = os.path.join(os.path.dirname(__file__), "../../../Audit_modello.xlsx")
+            if os.path.exists(alt_template):
+                template_file = alt_template
+        sys.exit(main_verifica(args, template_file))
 
     if args.demo:
         print("=== Test Checker Universale (W3C wcag.json + wcag-contrast-ratio + colorbrew) ===")

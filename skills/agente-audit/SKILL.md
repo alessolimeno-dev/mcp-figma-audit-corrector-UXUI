@@ -1,6 +1,6 @@
 ---
 name: agente-audit
-description: Esegue l'audit euristico (10 Euristiche di Nielsen) e normativo (W3C WCAG 2.2) in sola lettura (READ-ONLY) su prototipi Figma ed esporta il report Excel strutturato.
+description: Esegue l'audit euristico (10 Euristiche di Nielsen) e normativo (W3C WCAG 2.2) in sola lettura (READ-ONLY) su prototipi Figma ed esporta il report Excel strutturato. Se riceve anche il report Excel già corretto, esegue la verifica post-correzione (sezione 7) invece di un nuovo audit.
 ---
 
 # Skill: Agente di Audit UI/UX (Fase 1)
@@ -35,6 +35,8 @@ L'agente delega i calcoli e le definizioni ai moduli condivisi della cartella `s
 ---
 
 ## 3. Definizione INPUT
+
+> **Con o senza Excel.** `/audit [link-figma]` esegue l'audit (sezioni 3-6). `/audit [link-figma] [file-excel]`, cioè con anche il report Excel (`.xlsx`) già usato da `/correzione`, **non** fa un nuovo audit: esegue la **verifica post-correzione** descritta nella sezione 7. Se l'utente passa un Excel, vai direttamente alla sezione 7.
 
 1. **Link Prototipo Figma (`link_figma`):**
    - URL Figma fornito dall'utente (es. `https://www.figma.com/design/<file-key>/<titolo>?node-id=...`).
@@ -198,3 +200,46 @@ cat payload.json | <ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/ch
   1. il percorso del file generato;
   2. il promemoria: *"Prima della Fase 2 (correzione), salva una copia locale del file Figma: File → Save local copy… (.fig)"*.
   Poi attende che il progettista compili le decisioni (Human-in-the-Loop).
+
+---
+
+## 7. Modalità verifica post-correzione (`/audit [link-figma] [file-excel]`)
+
+**Quando:** l'utente passa, oltre al link Figma, il report Excel con le decisioni e il `Log Correzioni` (lo stesso file di `/correzione`). In questo caso **non si rifà l'audit e non si riscrive il report**: si controlla che le correzioni siano ancora in piedi e che non siano comparsi errori nuovi. La modalità resta `READ-ONLY`: stessi 5 strumenti Figma della sezione 4, `use_figma` vietato.
+
+**Principio sui token:** Claude scrive solo due piccoli JSON (le misure rilette e, se serve, gli errori nuovi). Confronto, esiti, testo della colonna `Differenza`, fogli e Riepilogo li scrive `checker.py` a 0 token. Non scrivere a mano testi di esito o di differenza.
+
+### 7.1 Flusso (nell'ordine)
+1. **Piano (non scrive nulla).** Elenca le voci da rileggere e i loro nodi e salva il modello `misure-post.json` da compilare:
+   ```bash
+   <ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/checker.py \
+     --verifica --excel "<report.xlsx>" --plan --plan-out "<cartella>/misure-post.json"
+   ```
+   Si rilegge ogni voce con Decisione `Accolta` o `Modificata`, **anche se la correzione spettava al Progettista**. Non si rilegge, e risulta `Non toccata`, solo ciò che è `Rifiutata` o senza decisione.
+2. **Rilettura mirata.** Solo i nodi del piano, un nodo o un frame alla volta, con `get_design_context` / `get_metadata` (mai una pagina intera). Compila `misure-post.json`: per i criteri misurabili `fg`/`bg` (hex) oppure `w`/`h` (px) letti da Figma; `"azione": "non_trovato"` per un nodo che non esiste più. Per le voci con annotazione il modello ha un solo campo `annotazione` per voce: scrivi il testo di `labelMarkdown` **solo** se l'hai riletto su tutti i nodi della voce; se nessuno strumento di lettura lo restituisce lascialo vuoto (esito `Da verificare`: non inventarlo). Facoltativo: `get_metadata` dei frame che contengono i nodi, per accorgerti di layout cambiati dopo un aumento di padding.
+3. **Errori nuovi (facoltativo).** Se durante la rilettura vedi un difetto che non è nel report, scrivilo in `nuove.json` nello stesso formato del payload dell'audit (`{"voci": [...]}` con `elemento`, `tipo_elemento`, `riferimento`, `descrizione`, `gravita`, `misure`, `nodi`, vedi sezione 3). Lo script scarta i nodi già presenti nel report per lo stesso criterio e assegna agli altri ID **`N-01`, `N-02`, …** (le voci del primo audit restano `V-xx`).
+   **Verifica completa** (solo se l'utente la chiede, per esempio «completa»): rifai l'audit dell'intero file con le sezioni 4-5 e metti le segnalazioni in `nuove.json`; costa come un audit nuovo. Segnala all'utente che le voci in più possono essere errori sfuggiti al primo giro e non vere regressioni.
+4. **Scrittura della verifica:**
+   ```bash
+   <ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/checker.py \
+     --verifica --excel "<report.xlsx>" --misure-post "<cartella>/misure-post.json" [--nuove "<cartella>/nuove.json"]
+   ```
+
+### 7.2 Esiti (calcolati dallo script)
+| Esito | Quando |
+|---|---|
+| `Confermata` | La misura riletta è conforme (o l'annotazione coincide con la colonna P) su tutti i nodi. |
+| `Regressione` | Il `Log Correzioni` registrava `Risolto` o `Annotato`, ma ora almeno un nodo non è conforme, ha un'annotazione diversa o non esiste più. |
+| `Non risolta` | Almeno un nodo non conforme, ma la voce non risultava risolta nel Log (per esempio correzione lasciata al progettista e non ancora fatta). Non è una regressione. |
+| `Da verificare` | Nessuna misura o annotazione riletta: vale l'esito del Log. |
+| `Non toccata` | Voce rifiutata o senza decisione: non riletta, errore invariato. |
+| `Nuova` | Errore non presente nel report (ID `N-xx`). |
+
+### 7.3 Output
+Una **copia** del report: `<cartella del report>/<nome file Figma>-<data>-verifica.xlsx`. Il report di partenza e il foglio `Log Correzioni` non vengono modificati. La copia contiene in più:
+- **Foglio `Verifica`:** una riga per ID (prima le `N-xx`, poi le `V-xx` del foglio `Voci`) con `Ambito`, `Normativa di riferimento`, `Gravità`, `Elemento`, `Esito correzione (dal Log)`, `Esito verifica`, `Regressione` (Sì/No) e `Differenza` (per i criteri misurabili «Audit → Correzione → Ora», con i nodi non conformi).
+- **Foglio `Riepilogo`:** la matrice del primo audit resta (rigenerata da `Voci`, con le formule dei conteggi corrette); a destra il blocco **«A correzione effettuata»**: per Ambito, i conteggi di Confermate / Regressione / Non risolte / Da verificare / Non toccate / Nuove, e le voci ancora aperte per Gravità.
+- **Foglio `Sessione`:** due righe nuove, «v1 (post-correzione)» e data; la riga della versione v0 non cambia.
+
+### 7.4 Passaggio di consegna
+Comunica in chat: il percorso del file, gli esiti (`Esiti: …` stampati dallo script) e l'elenco delle `Regressione`, `Non risolta` e `Nuova` (non presentarle come risolte). Ricorda che le voci `N-xx` stanno solo nel foglio `Verifica`: per correggerle servirebbe un nuovo audit che le porti in `Voci`.
