@@ -210,6 +210,7 @@ cat payload.json | <ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/ch
 **Principio sui token:** Claude scrive solo due piccoli JSON (le misure rilette e, se serve, gli errori nuovi). Confronto, esiti, testo della colonna `Differenza`, fogli e Riepilogo li scrive `checker.py` a 0 token. Non scrivere a mano testi di esito o di differenza.
 
 ### 7.1 Flusso (nell'ordine)
+0. **Promemoria (non bloccante, prima di tutto).** Scrivi in chat: *"La verifica aggiunge un foglio al report Excel che mi hai indicato. Prima di procedere fai una copia di backup del file e assicurati che non sia aperto in Excel."* Poi procedi. Se il file risulta aperto, lo script si ferma da solo al passo 4 (vedi 7.3).
 1. **Piano (non scrive nulla).** Elenca le voci da rileggere e i loro nodi e salva il modello `misure-post.json` da compilare:
    ```bash
    <ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/checker.py \
@@ -236,10 +237,11 @@ cat payload.json | <ROOT>/.venv/bin/python <ROOT>/skills/agente-audit/scripts/ch
 | `Nuova` | Errore non presente nel report (ID `N-xx`). |
 
 ### 7.3 Output
-Una **copia** del report: `<cartella del report>/<nome file Figma>-<data>-verifica.xlsx`. Il report di partenza e il foglio `Log Correzioni` non vengono modificati. La copia contiene in più:
-- **Foglio `Verifica`:** una riga per ID (prima le `N-xx`, poi le `V-xx` del foglio `Voci`) con `Ambito`, `Normativa di riferimento`, `Gravità`, `Elemento`, `Esito correzione (dal Log)`, `Esito verifica`, `Regressione` (Sì/No) e `Differenza` (per i criteri misurabili «Audit → Correzione → Ora», con i nodi non conformi).
-- **Foglio `Riepilogo`:** la matrice del primo audit resta (rigenerata da `Voci`, con le formule dei conteggi corrette); a destra il blocco **«A correzione effettuata»**: per Ambito, i conteggi di Confermate / Regressione / Non risolte / Da verificare / Non toccate / Nuove, e le voci ancora aperte per Gravità.
-- **Foglio `Sessione`:** due righe nuove, «v1 (post-correzione)» e data; la riga della versione v0 non cambia.
+La verifica si scrive **nello stesso file Excel** passato con `--excel` (come fa `/correzione` con il `Log Correzioni`): nessun file nuovo. Ogni esecuzione aggiunge un foglio nuovo, **`Verifica 1`, `Verifica 2`, `Verifica 3`, …**, quindi le verifiche precedenti restano e si possono confrontare. Un vecchio foglio `Verifica` senza numero conta come la verifica 1.
+- **Foglio `Verifica N`:** una riga per ID (prima le `N-xx`, poi le `V-xx` del foglio `Voci`) con `Ambito`, `Normativa di riferimento`, `Gravità`, `Elemento`, `Esito correzione (dal Log)`, `Esito verifica`, `Regressione` (Sì/No) e `Differenza` (per i criteri misurabili «Audit → Correzione → Ora», con i nodi non conformi). A destra della tabella (dalla colonna K) il blocco **«A correzione effettuata»**: per Ambito, i conteggi di Confermate / Regressione / Non risolte / Da verificare / Non toccate / Nuove, e le voci ancora aperte per Gravità.
+- **Foglio `Sessione`:** due righe nuove per ogni verifica («Verifica post-correzione N» e data), accodate a quelle esistenti; le righe precedenti non cambiano.
+- **Non cambiano:** `Voci`, `Nodi`, `Corretto`, `Log Correzioni`, i fogli `Verifica` precedenti e la matrice del `Riepilogo`. Nel `Riepilogo` lo script riscrive solo le formule dei conteggi di Decisione, Tipo di motivo e Chi applica (colonna B, righe 26-42), che nei report vecchi possono essere vuote o senza intervallo.
+- **File aperto:** se nella cartella del report c'è il file di blocco di Excel (`~$<nome del report>`), lo script si ferma senza scrivere nulla. Riporta all'utente in chat il messaggio dello script: *"Il file risulta attualmente aperto, chiudilo o verifica che non sia presente il file "<nome del file di blocco>""*, con il nome stampato dallo script. Quando l'utente conferma, rilancia il passo 4.
 
 ### 7.4 Passaggio di consegna
-Comunica in chat: il percorso del file, gli esiti (`Esiti: …` stampati dallo script) e l'elenco delle `Regressione`, `Non risolta` e `Nuova` (non presentarle come risolte). Ricorda che le voci `N-xx` stanno solo nel foglio `Verifica`: per correggerle servirebbe un nuovo audit che le porti in `Voci`.
+Comunica in chat: il percorso del file e il nome del foglio scritto (`Verifica N`), gli esiti (`Esiti: …` stampati dallo script) e l'elenco delle `Regressione`, `Non risolta` e `Nuova` (non presentarle come risolte). Ricorda che le voci `N-xx` stanno solo nel foglio `Verifica N`: per correggerle servirebbe un nuovo audit che le porti in `Voci`.

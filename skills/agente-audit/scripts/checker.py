@@ -502,6 +502,11 @@ def _inject_cached_values(xlsx_path: str, sheet_cache: Dict[str, Dict[str, Any]]
                                 if v_el is None:
                                     v_el = ET.SubElement(c, '{http://schemas.openxmlformats.org/spreadsheetml/2006/main}v')
                                 v_el.text = val_str
+                                if isinstance(updates[coord], bool):
+                                    c.set('t', 'b')
+                                    v_el.text = '1' if updates[coord] else '0'
+                                elif isinstance(updates[coord], str):
+                                    c.set('t', 'str')
                         data = ET.tostring(root, encoding='utf-8', xml_declaration=True)
                 zout.writestr(item, data)
 
@@ -1133,55 +1138,41 @@ def prepara_voci_nuove(payload: Any, voci_note: List[Dict[str, Any]], warn=None)
     return out
 
 
-def _clona_foglio(src, dst) -> None:
-    """Copia valori, stili, larghezze e celle unite di un foglio in un altro foglio (anche di un altro file)."""
-    for row in src.iter_rows():
-        for c in row:
-            d = dst.cell(c.row, c.column, c.value)
-            if c.has_style:
-                d.font, d.border, d.fill = copy.copy(c.font), copy.copy(c.border), copy.copy(c.fill)
-                d.number_format, d.protection, d.alignment = c.number_format, copy.copy(c.protection), copy.copy(c.alignment)
-    for k, dim in src.column_dimensions.items():
-        dst.column_dimensions[k].width = dim.width
-    for k, dim in src.row_dimensions.items():
-        if dim.height:
-            dst.row_dimensions[k].height = dim.height
-    for rng in src.merged_cells.ranges:
-        dst.merge_cells(str(rng))
+_RE_FOGLIO_VERIFICA = re.compile(r"^Verifica(?: (\d+))?$")
 
 
-def _scrivi_riepilogo(wb, template_path: str, voci: List[Dict[str, Any]], righe: List[Dict[str, str]]) -> Dict[str, Any]:
-    """Rigenera il foglio Riepilogo dal template (matrice del primo audit, calcolata da Voci) e aggiunge il blocco
-    'A correzione effettuata' a destra (colonne H-O). Ritorna i valori da iniettare nelle formule (cache)."""
-    pos = wb.sheetnames.index("Riepilogo") if "Riepilogo" in wb.sheetnames else len(wb.sheetnames)
-    if "Riepilogo" in wb.sheetnames:
-        wb.remove(wb["Riepilogo"])
-    ws = wb.create_sheet("Riepilogo", pos)
-    _clona_foglio(openpyxl.load_workbook(template_path)["Riepilogo"], ws)
+def prossimo_foglio_verifica(sheetnames: List[str]) -> Tuple[int, str]:
+    """Numero e nome del prossimo foglio di verifica: 'Verifica 1', 'Verifica 2', ...
+    Un vecchio foglio 'Verifica' senza numero conta come la verifica 1."""
+    n = 0
+    for s in sheetnames:
+        m = _RE_FOGLIO_VERIFICA.match(s)
+        if m:
+            n = max(n, int(m.group(1) or 1))
+    return n + 1, f"Verifica {n + 1}"
 
-    items = [{
-        "id": v["id"], "riferimento": v["riferimento"], "elemento": v["elemento"], "descrizione": v["descrizione"],
-        "correzione": v["corr"], "ambito": v["ambito"], "gravita": v["gravita"], "stato": v["stato"],
-        "dove_si_corregge": v["dove"], "suggerimento_annotazione": v["sugg"], "affidabilita": v["aff"], "conflitto": v["confl"],
-    } for v in voci]
-    for i in items:
-        i["ambito"] = i["ambito"] or evaluate_ambito(i["riferimento"])
-    for coord, val in calculate_riepilogo_stats(items).items():
-        ws[coord] = val
-    for c, t in zip("BCDEF", ("Lieve", "Moderata", "Grave", "Bloccante", "Totale")):
-        ws[f"{c}3"] = t
-    for coord, formula in riepilogo_formule_corrette().items():
-        ws[coord] = formula
 
-    # --- blocco "A correzione effettuata"
-    st_head, st_lab, st_val = (copy.copy(ws[x]._style) for x in ("A3", "A4", "B4"))
+def controlla_file_chiuso(excel_path: str) -> None:
+    """Interrompe se il report risulta aperto in Excel (file di blocco '~$...' nella stessa cartella)."""
+    cartella, nome = os.path.split(os.path.abspath(excel_path))
+    for lock in {"~$" + nome, "~$" + nome[2:]}:
+        p = os.path.join(cartella, lock)
+        if os.path.exists(p):
+            raise SystemExit(
+                f"[checker] ERRORE: Il file risulta attualmente aperto, chiudilo o verifica che non sia presente il file \"{lock}\" "
+                f"nella cartella {cartella}.")
+
+
+def _scrivi_blocco_esiti(ws, righe: List[Dict[str, str]], st_head: Any, st_lab: Any, st_val: Any, col0: int = 11) -> None:
+    """Blocco 'A correzione effettuata' a destra della tabella del foglio Verifica N (dalla colonna K):
+    conteggi per Ambito ed Esito, e voci ancora aperte per Ambito e Gravità."""
+    from openpyxl.utils import get_column_letter as L
     wrap = openpyxl.styles.Alignment(wrap_text=True, vertical="top")
 
-    def put(coord: str, val: Any, st: Any) -> None:
-        ws[coord].value = val
-        ws[coord]._style = copy.copy(st)
-        if st is st_val:
-            ws[coord].alignment = wrap
+    def put(r: int, c: int, val: Any, st: Any) -> None:
+        cell = ws.cell(r, col0 + c, val)
+        cell._style = copy.copy(st)
+        cell.alignment = wrap
 
     def fmt(ids: List[str]) -> str:
         return f"{', '.join(ids)} ({len(ids)})" if ids else "- (0)"
@@ -1193,39 +1184,47 @@ def _scrivi_riepilogo(wb, template_path: str, voci: List[Dict[str, Any]], righe:
         if r["esito"] != "Confermata":
             aperte.setdefault((r["ambito"], r["gravita"]), []).append(r["id"])
 
-    put("H3", "A correzione effettuata (verifica post-correzione)", st_head)
-    for col, t in zip("HIJKLMNO", ("Ambito",) + ESITI_VERIFICA + ("Totale",)):
-        put(f"{col}4", t, st_head)
-    for i, amb in enumerate(_AMBITI, start=5):
-        put(f"H{i}", amb, st_lab)
-        for col, esito in zip("IJKLMN", ESITI_VERIFICA):
-            put(f"{col}{i}", fmt(per_amb.get((amb, esito), [])), st_val)
-        put(f"O{i}", sum(len(per_amb.get((amb, e), [])) for e in ESITI_VERIFICA), st_val)
-    put("H7", "Totale", st_lab)
-    for col, esito in zip("IJKLMN", ESITI_VERIFICA):
-        put(f"{col}7", fmt([x for a in _AMBITI for x in per_amb.get((a, esito), [])]), st_val)
-    put("O7", len(righe), st_val)
+    put(1, 0, "A correzione effettuata", st_head)
+    for c, t in enumerate(("Ambito",) + ESITI_VERIFICA + ("Totale",)):
+        put(2, c, t, st_head)
+    for i, amb in enumerate(_AMBITI, start=3):
+        put(i, 0, amb, st_lab)
+        for c, esito in enumerate(ESITI_VERIFICA, start=1):
+            put(i, c, fmt(per_amb.get((amb, esito), [])), st_val)
+        put(i, 7, sum(len(per_amb.get((amb, e), [])) for e in ESITI_VERIFICA), st_val)
+    put(5, 0, "Totale", st_lab)
+    for c, esito in enumerate(ESITI_VERIFICA, start=1):
+        put(5, c, fmt([x for a in _AMBITI for x in per_amb.get((a, esito), [])]), st_val)
+    put(5, 7, len(righe), st_val)
 
-    put("H9", "Voci non confermate (ancora aperte) per gravità", st_head)
-    for col, t in zip("HIJKLM", ("Ambito",) + _GRAVITA_COL + ("Totale",)):
-        put(f"{col}10", t, st_head)
-    for i, amb in enumerate(_AMBITI, start=11):
-        put(f"H{i}", amb, st_lab)
-        for col, g in zip("IJKL", _GRAVITA_COL):
-            put(f"{col}{i}", fmt(aperte.get((amb, g), [])), st_val)
-        put(f"M{i}", sum(len(aperte.get((amb, g), [])) for g in _GRAVITA_COL), st_val)
-    put("H13", "Totale", st_lab)
-    for col, g in zip("IJKL", _GRAVITA_COL):
-        put(f"{col}13", fmt([x for a in _AMBITI for x in aperte.get((a, g), [])]), st_val)
-    put("M13", sum(len(x) for x in aperte.values()), st_val)
-    put("H15", "Ancora aperte = tutte le voci tranne le Confermate (Regressioni, Non risolte, Da verificare, Non toccate, Nuove). "
+    put(7, 0, "Voci non confermate (ancora aperte) per gravità", st_head)
+    for c, t in enumerate(("Ambito",) + _GRAVITA_COL + ("Totale",)):
+        put(8, c, t, st_head)
+    for i, amb in enumerate(_AMBITI, start=9):
+        put(i, 0, amb, st_lab)
+        for c, g in enumerate(_GRAVITA_COL, start=1):
+            put(i, c, fmt(aperte.get((amb, g), [])), st_val)
+        put(i, 5, sum(len(aperte.get((amb, g), [])) for g in _GRAVITA_COL), st_val)
+    put(11, 0, "Totale", st_lab)
+    for c, g in enumerate(_GRAVITA_COL, start=1):
+        put(11, c, fmt([x for a in _AMBITI for x in aperte.get((a, g), [])]), st_val)
+    put(11, 5, sum(len(x) for x in aperte.values()), st_val)
+    put(13, 0, "Ancora aperte = tutte le voci tranne le Confermate (Regressioni, Non risolte, Da verificare, Non toccate, Nuove). "
                "Regressione = la correzione risultava riuscita nel Log ma ora la misura non è conforme.", st_lab)
-    ws["H15"].alignment = wrap
-    ws.merge_cells("H15:O16")
-    for col, w in zip("HIJKLMNO", (16, 24, 24, 24, 24, 24, 24, 10)):
-        ws.column_dimensions[col].width = w
+    ws.merge_cells(start_row=13, start_column=col0, end_row=14, end_column=col0 + 7)
+    for c, w in enumerate((16, 24, 24, 24, 24, 24, 24, 10)):
+        ws.column_dimensions[L(col0 + c)].width = w
 
-    # cache dei valori delle formule (conteggi di Decisione, Tipo di motivo, Chi applica)
+
+def _cache_riepilogo(ws, voci: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Conteggi del Riepilogo che dipendono dalle decisioni del progettista (Decisione, Tipo di motivo, Chi applica):
+    riscrive solo le formule di quelle celle (colonna B, righe 26-28, 32-36, 40-42; nei report vecchi possono essere
+    vuote o senza intervallo) e ritorna i valori da reiniettare dopo il salvataggio, perché openpyxl non conserva
+    i valori calcolati. La matrice del primo audit e il resto del foglio non cambiano."""
+    if str(ws["A25"].value or "").strip().lower() != "decisione del progettista":
+        return {}   # layout del Riepilogo diverso dal template: non si tocca nulla
+    for coord, f in riepilogo_formule_corrette().items():
+        ws[coord] = f
     cache: Dict[str, int] = {}
     low = lambda s: str(s or "").strip().lower()
     for r in (26, 27, 28):
@@ -1239,12 +1238,13 @@ def _scrivi_riepilogo(wb, template_path: str, voci: List[Dict[str, Any]], righe:
 
 def verifica_report(
     excel_path: str,
-    out_path: str,
-    template_path: str,
     post: Optional[Dict[str, Any]] = None,
     nuove: Any = None,
 ) -> Dict[str, Any]:
-    """Confronta il report con la rilettura di Figma e scrive la copia '-verifica.xlsx' (Log Correzioni in sola lettura)."""
+    """Confronta il report con la rilettura di Figma e aggiunge allo STESSO file un nuovo foglio 'Verifica N'
+    (N = 1, 2, 3, ... a ogni verifica) e due righe nel foglio Sessione. Gli altri fogli (Voci, Nodi,
+    Log Correzioni, Riepilogo, Corretto) e i fogli Verifica precedenti non vengono modificati."""
+    controlla_file_chiuso(excel_path)
     rep = leggi_report_verifica(excel_path)
     voci, log = rep["voci"], rep["log"]
     da_leggere, _ = piano_verifica(voci)
@@ -1273,20 +1273,31 @@ def verifica_report(
     } for g in nuove_voci]
     tutte = righe_nuove + righe   # le nuove (N-xx) in cima, poi le V-xx nell'ordine del primo audit
 
+    # Valori già calcolati delle formule (es. colonna U di Voci, «Da correggere» di Nodi): openpyxl li perde al
+    # salvataggio, quindi si reiniettano dopo, così il file resta leggibile anche prima che Excel ricalcoli.
+    wb_val = openpyxl.load_workbook(excel_path, data_only=True)
     wb = openpyxl.load_workbook(excel_path)
-    # Sessione: versione di verifica e data (la riga v0 resta)
+    cache_formule: Dict[str, Dict[str, Any]] = {}
+    for ws_f in wb.worksheets:
+        vals = wb_val[ws_f.title]
+        c_ws = {c.coordinate: vals[c.coordinate].value for row in ws_f.iter_rows() for c in row
+                if isinstance(c.value, str) and c.value.startswith("=") and vals[c.coordinate].value is not None}
+        if c_ws:
+            cache_formule[ws_f.title] = c_ws
+    num, nome_foglio = prossimo_foglio_verifica(wb.sheetnames)
+    quando = datetime.now().isoformat(timespec="seconds")
+    # Sessione: due righe per ogni verifica, accodate dopo l'ultima riga compilata (le righe precedenti restano)
     if "Sessione" in wb.sheetnames:
         s = wb["Sessione"]
-        for r, (lab, val) in zip((14, 15), (("Verifica post-correzione", "v1 (post-correzione)"),
-                                            ("Data e ora della verifica", datetime.now().isoformat(timespec="seconds")))):
+        r0 = max(14, max((r for r in range(1, s.max_row + 1) if s.cell(r, 1).value not in (None, "")), default=13) + 1)
+        for r, (lab, val) in zip((r0, r0 + 1), ((f"Verifica post-correzione {num}", f"v{num} (foglio '{nome_foglio}')"),
+                                               (f"Data e ora della verifica {num}", quando))):
             s.cell(r, 1, lab)
             s.cell(r, 2, val)
             for c in (1, 2):
                 s.cell(r, c)._style = copy.copy(s.cell(13, c)._style)
-    # Foglio Verifica (ricreato a ogni esecuzione)
-    if "Verifica" in wb.sheetnames:
-        wb.remove(wb["Verifica"])
-    wv = wb.create_sheet("Verifica")
+    # Foglio Verifica N (nuovo a ogni esecuzione)
+    wv = wb.create_sheet(nome_foglio)
     head = ["ID", "Ambito", "Normativa di riferimento", "Gravità", "Elemento", "Esito correzione (dal Log)",
             "Esito verifica", "Regressione", "Differenza"]
     wv.append(head)
@@ -1310,14 +1321,23 @@ def verifica_report(
     wv.freeze_panes = "A2"
     wv.auto_filter.ref = f"A1:I{wv.max_row}"
 
-    # Riepilogo: matrice del primo audit (da Voci) + blocco "A correzione effettuata"
-    cache = _scrivi_riepilogo(wb, template_path, voci, tutte)
+    # Blocco "A correzione effettuata" a destra della tabella (colonna K): il Riepilogo del primo audit non cambia
+    if "Riepilogo" in wb.sheetnames:
+        rp = wb["Riepilogo"]
+        st_lab, st_val = copy.copy(rp["A4"]._style), copy.copy(rp["B4"]._style)
+    else:
+        st_lab = st_val = copy.copy(wv.cell(2, 1)._style)
+    _scrivi_blocco_esiti(wv, tutte, st_head, st_lab, st_val)
+
+    if "Riepilogo" in wb.sheetnames:
+        cache_formule.setdefault("Riepilogo", {}).update(_cache_riepilogo(wb["Riepilogo"], voci))
     wb.calculation.fullCalcOnLoad = True
-    wb.save(out_path)
-    _inject_cached_values(out_path, {"Riepilogo": cache})
+    wb.save(excel_path)
+    if cache_formule:
+        _inject_cached_values(excel_path, cache_formule)
 
     conteggi = {e: sum(1 for r in tutte if r["esito"] == e) for e in ESITI_VERIFICA}
-    return {"out": out_path, "conteggi": conteggi, "righe": tutte}
+    return {"out": excel_path, "foglio": nome_foglio, "conteggi": conteggi, "righe": tutte}
 
 
 def main_verifica(args, template_file: str) -> int:
@@ -1338,14 +1358,10 @@ def main_verifica(args, template_file: str) -> int:
         with open(args.nuove, "r", encoding="utf-8") as f:
             nuove = json.load(f)
     if args.out:
-        out = args.out if os.path.dirname(args.out) else os.path.join(os.path.dirname(os.path.abspath(args.excel)), args.out)
-    else:
-        nome = figma_folder_name(rep["sessione"])
-        out = os.path.join(os.path.dirname(os.path.abspath(args.excel)), f"{nome}-{datetime.now().strftime('%Y-%m-%d')}-verifica.xlsx")
-    if os.path.abspath(out) == os.path.abspath(args.excel):
-        raise SystemExit("[checker] ERRORE: --out coincide con il report di partenza: la verifica scrive sempre una copia.")
-    res = verifica_report(args.excel, out, template_file, post, nuove)
-    print(f"Verifica post-correzione scritta: {res['out']}")
+        print("[checker] AVVISO: --out ignorato con --verifica: la verifica si scrive come nuovo foglio nel report indicato da --excel.",
+              file=sys.stderr)
+    res = verifica_report(args.excel, post, nuove)
+    print(f"Verifica post-correzione scritta nel foglio '{res['foglio']}' di: {res['out']}")
     print("Esiti: " + ", ".join(f"{e} {n}" for e, n in res["conteggi"].items()))
     for r in res["righe"]:
         if r["esito"] in ("Regressione", "Non risolta", "Nuova"):
@@ -1392,8 +1408,8 @@ def main():
     parser.add_argument("--stdin", action="store_true", help="Legge il payload JSON dallo standard input")
     # Verifica post-correzione (/audit [link] [file-excel])
     parser.add_argument("--verifica", action="store_true",
-                        help="Verifica post-correzione: confronta il report Excel (--excel) con le misure rilette da Figma e scrive una copia '-verifica.xlsx'")
-    parser.add_argument("--excel", help="Con --verifica: report Excel con decisioni e Log Correzioni (non viene modificato)")
+                        help="Verifica post-correzione: confronta il report Excel (--excel) con le misure rilette da Figma e aggiunge al report un nuovo foglio 'Verifica N'")
+    parser.add_argument("--excel", help="Con --verifica: report Excel con decisioni e Log Correzioni (si aggiungono solo il foglio 'Verifica N' e due righe in Sessione)")
     parser.add_argument("--plan", action="store_true", help="Con --verifica: elenca i nodi da rileggere su Figma, senza scrivere nulla")
     parser.add_argument("--plan-out", help="Con --verifica --plan: salva il modello di misure-post.json da compilare")
     parser.add_argument("--misure-post", help="Con --verifica: JSON {ID voce: {ID nodo: {fg,bg | w,h | annotazione}}} con i valori riletti da Figma")

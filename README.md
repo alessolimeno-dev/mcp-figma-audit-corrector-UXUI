@@ -7,7 +7,7 @@ Skill per **Claude Code** che analizzano (audit) e correggono l'usabilità e l'a
 ## Panoramica
 
 Claude, collegato a Figma tramite il connettore MCP ufficiale, esegue due skill in sequenza rispettando il principio **Human-in-the-Loop**:
-1. **`agente-audit`** (`/audit`): analizza usabilità (10 Euristiche di Nielsen) e accessibilità (W3C WCAG 2.2) e produce un report Excel strutturato. Sola lettura (`READ-ONLY`). Con anche il report Excel (`/audit [link] [file-excel]`) fa la **verifica post-correzione**: rilegge i nodi corretti, segnala regressioni ed errori nuovi (`N-xx`) e scrive una copia `…-verifica.xlsx` con il foglio `Verifica` e il blocco «A correzione effettuata» nel `Riepilogo`.
+1. **`agente-audit`** (`/audit`): analizza usabilità (10 Euristiche di Nielsen) e accessibilità (W3C WCAG 2.2) e produce un report Excel strutturato. Sola lettura (`READ-ONLY`). Con anche il report Excel (`/audit [link] [file-excel]`) fa la **verifica post-correzione**: rilegge i nodi corretti, segnala regressioni ed errori nuovi (`N-xx`) e aggiunge allo stesso report un foglio nuovo `Verifica N` (uno per ogni verifica) con gli esiti e il blocco «A correzione effettuata».
 2. **Revisione umana**: il progettista compila il Registro delle Decisioni nel foglio Excel (`Accolta`, `Modificata`, ecc.).
 3. **`agente-correzione`** (`/correzione`): interviene su **tutti i nodi** degli errori approvati (componenti, istanze e nodi singoli, in ogni pagina) e compila il foglio `Log Correzioni` (`WRITE-BOUNDED`).
 
@@ -22,6 +22,8 @@ Le regole valgono per **qualsiasi file Figma**: nessuna skill, script o modulo c
 - **Da correggere** è una formula: vale `Sì` solo se, nella voce collegata, la Decisione (col. R) è `Accolta` o `Modificata` **e** "Chi applica la correzione" (col. V) è `Agente` o `Entrambi`; altrimenti `No`. Non si compila a mano. `corrector.py` ricalcola la stessa regola da R e V.
 - **Ordine di correzione:** prima il componente, poi le istanze (si rileggono: se hanno ereditato la correzione non si riscrivono, se hanno un override si correggono), poi i nodi singoli. Una chiamata `use_figma` per voce.
 - **Annotazioni:** il suggerimento della colonna P è un testo guida con segnaposto tra parentesi quadre; la correzione lo riporta così com'è su ogni nodo, senza compilare il codice. L'annotazione si scrive con `labelMarkdown`, mai con `label` (Figma convertirebbe `<`, `>` e `"` in entità HTML).
+
+> Si segnala che l'inserimento automatizzato di tali annotazioni direttamente in Figma richiede un piano in abbonamento e non è supportato dal piano gratuito.
 
 ---
 
@@ -103,7 +105,7 @@ La cartella `logs/` (log dei token) e la cartella `.venv/` sono locali e non ven
 | `skills/common/references/wcag.json` | Dati | Dataset normativo (86 criteri WCAG 2.2 + 10 Euristiche di Nielsen) |
 | `skills/common/lib/` | Libreria | Calcoli colore, caricamento normativo, gestione Excel, hook |
 | `skills/agente-audit/SKILL.md` | Skill | Regole di analisi UI/UX (`READ-ONLY`) |
-| `skills/agente-audit/scripts/checker.py` | Script | Contrasto, target size, raggruppamento degli errori comuni e scrittura del report Excel (fogli `Voci` e `Nodi`); con `--verifica` confronto post-correzione (foglio `Verifica`, blocco «A correzione effettuata» nel `Riepilogo`), senza token AI |
+| `skills/agente-audit/scripts/checker.py` | Script | Contrasto, target size, raggruppamento degli errori comuni e scrittura del report Excel (fogli `Voci` e `Nodi`); con `--verifica` confronto post-correzione (foglio `Verifica N` nello stesso report, con il blocco «A correzione effettuata»), senza token AI |
 | `skills/agente-correzione/SKILL.md` | Skill | Regole di modifica mirata su Figma (`WRITE-BOUNDED`) |
 | `skills/agente-correzione/scripts/corrector.py` | Script | Voci da correggere con tutti i loro nodi, calcolo correzioni colore/padding, Log Correzioni (una riga per ID errore) |
 

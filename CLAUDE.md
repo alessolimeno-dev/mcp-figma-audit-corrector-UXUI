@@ -9,7 +9,7 @@ Le definizioni complete delle skill risiedono nella cartella comune `skills/`.
 
 ## Comandi Slash
 - `/audit [link-figma]`: attiva il flusso definito in `skills/agente-audit/SKILL.md`.
-- `/audit [link-figma] [file-excel]`: con anche il report Excel esegue la **verifica post-correzione** (sezione 7 di `skills/agente-audit/SKILL.md`): sola lettura, scrive una copia `…-verifica.xlsx` con il foglio `Verifica` e il blocco «A correzione effettuata» nel `Riepilogo`.
+- `/audit [link-figma] [file-excel]`: con anche il report Excel esegue la **verifica post-correzione** (sezione 7 di `skills/agente-audit/SKILL.md`): sola lettura su Figma; aggiunge allo stesso Excel un foglio nuovo `Verifica N` (1, 2, 3, … a ogni verifica) con gli esiti e il blocco «A correzione effettuata». Prima suggerisci in chat una copia di backup dell'Excel e di chiuderlo.
 - `/correzione [link-figma] [file-excel]`: attiva il flusso definito in `skills/agente-correzione/SKILL.md`.
 
 ## Principi Guida Sintetici
@@ -23,4 +23,4 @@ Le definizioni complete delle skill risiedono nella cartella comune `skills/`.
 8. **Regole universali:** nessuna regola, ID, nome o eccezione di un singolo file Figma nelle skill, negli script o nei moduli comuni.
 9. **Nodi:** una voce di `Voci` è un errore comune con più nodi (colonna D); il foglio `Nodi` ha una riga per coppia nodo-errore. `Da correggere` = Decisione `Accolta`/`Modificata` **e** Chi applica `Agente`/`Entrambi` (regola in `skills/common/lib/nodi_utils.py`).
 10. **Annotazioni:** il suggerimento della colonna P è un testo guida; non si compila mai il codice (i segnaposto `[...]` restano). Scrivi con `labelMarkdown`, mai con `label` (Figma converte `<`, `>` e `"` in entità HTML); verifica rileggendo `labelMarkdown` senza decodificare entità e ignora `label`. Dettagli in `skills/agente-correzione/SKILL.md`.
-11. **Verifica post-correzione:** `/audit` con un Excel non rifà l'audit. Si rileggono le voci `Accolta`/`Modificata` (anche se le applica il Progettista), non quelle `Rifiutate`; Claude scrive solo `misure-post.json` (e `nuove.json` per errori nuovi, ID `N-xx`), il resto lo fa `checker.py --verifica` a 0 token. Il report di partenza e il `Log Correzioni` non si modificano.
+11. **Verifica post-correzione:** `/audit` con un Excel non rifà l'audit. Si rileggono le voci `Accolta`/`Modificata` (anche se le applica il Progettista), non quelle `Rifiutate`; Claude scrive solo `misure-post.json` (e `nuove.json` per errori nuovi, ID `N-xx`), il resto lo fa `checker.py --verifica` a 0 token. La verifica aggiunge solo il foglio `Verifica N` e due righe in `Sessione`: `Voci`, `Nodi`, `Log Correzioni` e i fogli `Verifica` precedenti non si modificano.
